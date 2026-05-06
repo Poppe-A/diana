@@ -32,7 +32,7 @@ services:
     working_dir: /app
     depends_on:
       - db
-    command: sh -lc "yarn install && yarn workspace backend start:dev"
+    command: sleep infinity
 
   frontend:
     build:
@@ -41,12 +41,13 @@ services:
     container_name: diana-front
     ports:
       - 5273:5273
+      - 4273:4173
     volumes:
       - .:/app
       - diana-node-modules:/app/node_modules
     working_dir: /app
     restart: on-failure:3
-    command: sh -lc "yarn install && yarn workspace frontend dev"
+    command: sleep infinity
 
 volumes:
   diana-db:

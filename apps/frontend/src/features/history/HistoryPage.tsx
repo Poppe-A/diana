@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { LineChart } from '@mui/x-charts/LineChart';
+import { ChartsReferenceLine } from '@mui/x-charts';
 import { Stack, ToggleButton, ToggleButtonGroup, Typography, Box, Chip } from '@mui/material';
 import dayjs from 'dayjs';
 import 'dayjs/locale/fr';
@@ -36,7 +37,7 @@ export function HistoryPage() {
     () =>
       logs.map((l) => ({
         date: l.date,
-        douleur: l.painLevel,
+        sensation: l.sensation,
       })),
     [logs],
   );
@@ -44,7 +45,7 @@ export function HistoryPage() {
   const periodDates = useMemo(() => logs.filter((l) => l.isPeriodDay).map((l) => l.date), [logs]);
 
   const avg =
-    logs.length > 0 ? (logs.reduce((s, l) => s + l.painLevel, 0) / logs.length).toFixed(1) : '—';
+    logs.length > 0 ? (logs.reduce((s, l) => s + l.sensation, 0) / logs.length).toFixed(1) : '—';
 
   return (
     <PageLayout title="Historique">
@@ -61,7 +62,8 @@ export function HistoryPage() {
         </ToggleButtonGroup>
 
         <Typography variant="body2" color="text.secondary">
-          Moyenne sur la période : <strong>{avg}</strong> · {logs.length} jour(s) enregistré(s)
+          Moyenne du ressenti sur la période : <strong>{avg}</strong> · {logs.length} jour(s){' '}
+          enregistré(s) — échelle −10 (mal-être) à +10 (bien-être).
         </Typography>
 
         {dataset.length === 0 ? (
@@ -71,10 +73,23 @@ export function HistoryPage() {
             <LineChart
               dataset={dataset}
               xAxis={[{ scaleType: 'band', dataKey: 'date' }]}
-              series={[{ dataKey: 'douleur', label: 'Douleur', showMark: true }]}
+              yAxis={[{ min: -10, max: 10, domainLimit: 'strict' }]}
+              series={[{ dataKey: 'sensation', label: 'Ressenti', showMark: true }]}
               height={320}
               margin={{ left: 48, right: 16, top: 16, bottom: 32 }}
-            />
+            >
+              <ChartsReferenceLine
+                y={0}
+                lineStyle={{ stroke: '#757575', strokeDasharray: '4 4', opacity: 0.8 }}
+              />
+              {periodDates.map((d) => (
+                <ChartsReferenceLine
+                  key={d}
+                  x={d}
+                  lineStyle={{ stroke: '#ad1457', strokeWidth: 28, opacity: 0.22 }}
+                />
+              ))}
+            </LineChart>
           </Box>
         )}
 

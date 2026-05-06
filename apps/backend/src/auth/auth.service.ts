@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { Response } from 'express';
+import { CookieOptions, Response } from 'express';
 import * as bcrypt from 'bcrypt';
 import { UserService } from '../user/user.service';
 import { RegisterDto } from './dto/register.dto';
@@ -24,13 +24,14 @@ export class AuthService {
     return this.configService.get<string>('NODE_ENV') === 'production';
   }
 
-  private cookieOptions(maxAge: number) {
+  private cookieOptions(maxAge: number): CookieOptions {
     const prod = this.isProduction();
+    const sameSite: CookieOptions['sameSite'] = prod ? 'strict' : 'lax';
     return {
       httpOnly: true,
       path: '/',
       secure: prod,
-      sameSite: (prod ? 'strict' : 'lax') as const,
+      sameSite,
       maxAge,
     };
   }
@@ -42,11 +43,12 @@ export class AuthService {
 
   clearAuthCookies(res: Response) {
     const prod = this.isProduction();
-    const base = {
+    const sameSite: CookieOptions['sameSite'] = prod ? 'strict' : 'lax';
+    const base: CookieOptions = {
       httpOnly: true,
       path: '/',
       secure: prod,
-      sameSite: (prod ? 'strict' : 'lax') as const,
+      sameSite,
       expires: new Date(0),
     };
     res.cookie('accessToken', '', base);

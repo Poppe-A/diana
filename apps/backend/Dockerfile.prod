@@ -1,0 +1,25 @@
+# Production image (monorepo root as build context)
+FROM node:24-alpine
+
+ENV TZ="Europe/Paris"
+
+RUN apk add --no-cache python3 make g++
+
+WORKDIR /app
+
+COPY package.json yarn.lock ./
+COPY apps/backend/package.json ./apps/backend/
+COPY apps/frontend/package.json ./apps/frontend/
+
+RUN yarn install --frozen-lockfile
+
+ENV NODE_ENV=production
+
+COPY . .
+
+WORKDIR /app/apps/backend
+
+RUN yarn build
+RUN chmod +x start.sh
+
+CMD ["sh", "start.sh"]

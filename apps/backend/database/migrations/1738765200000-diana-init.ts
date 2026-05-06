@@ -1,4 +1,10 @@
-import { MigrationInterface, QueryRunner, Table, TableForeignKey, TableIndex, TableUnique } from 'typeorm';
+import {
+  MigrationInterface,
+  QueryRunner,
+  Table,
+  TableForeignKey,
+  TableIndex,
+} from 'typeorm';
 
 export class DianaInit1738765200000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
@@ -13,7 +19,7 @@ export class DianaInit1738765200000 implements MigrationInterface {
             isGenerated: true,
             generationStrategy: 'increment',
           },
-          { name: 'email', type: 'varchar', length: '255', isUnique: true },
+          { name: 'email', type: 'varchar', length: '255' },
           { name: 'password', type: 'varchar', length: '255' },
           {
             name: 'createdAt',
@@ -30,6 +36,15 @@ export class DianaInit1738765200000 implements MigrationInterface {
       }),
     );
 
+    await queryRunner.createIndex(
+      'user',
+      new TableIndex({
+        name: 'UQ_user_email',
+        columnNames: ['email'],
+        isUnique: true,
+      }),
+    );
+
     await queryRunner.createTable(
       new Table({
         name: 'daily_logs',
@@ -43,9 +58,9 @@ export class DianaInit1738765200000 implements MigrationInterface {
           },
           { name: 'userId', type: 'int' },
           { name: 'date', type: 'date' },
-          { name: 'painLevel', type: 'tinyint', unsigned: true },
+          { name: 'sensation', type: 'text' },
           { name: 'comment', type: 'text', isNullable: true },
-          { name: 'isPeriodDay', type: 'boolean', default: false },
+          { name: 'isPeriodDay', type: 'text' },
           {
             name: 'createdAt',
             type: 'timestamp',
@@ -74,16 +89,9 @@ export class DianaInit1738765200000 implements MigrationInterface {
     await queryRunner.createIndex(
       'daily_logs',
       new TableIndex({
-        name: 'IDX_daily_log_user_date',
-        columnNames: ['userId', 'date'],
-      }),
-    );
-
-    await queryRunner.createUniqueConstraint(
-      'daily_logs',
-      new TableUnique({
         name: 'UQ_daily_log_user_date',
         columnNames: ['userId', 'date'],
+        isUnique: true,
       }),
     );
   }

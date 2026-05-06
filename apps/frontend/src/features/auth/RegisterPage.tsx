@@ -4,7 +4,7 @@ import * as yup from 'yup';
 import { Alert, Button, Link, Stack, TextField, Typography } from '@mui/material';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../hooks';
-import { clearError, register } from '../../store/authSlice';
+import { clearError, register as registerAccount } from '../../store/authSlice';
 import { useEffect } from 'react';
 
 const schema = yup.object({
@@ -29,7 +29,7 @@ export function RegisterPage() {
   }, [dispatch]);
 
   const onSubmit = async (data: Form) => {
-    await dispatch(register(data)).unwrap();
+    await dispatch(registerAccount(data)).unwrap();
     navigate('/login');
   };
 

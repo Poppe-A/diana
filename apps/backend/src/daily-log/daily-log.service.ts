@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
 import { DailyLog } from './daily-log.entity';
@@ -8,7 +12,7 @@ import { CryptoService } from '../crypto/crypto.service';
 export type DailyLogView = {
   id: number;
   date: string;
-  painLevel: number;
+  sensation: number;
   comment: string | null;
   isPeriodDay: boolean;
 };
@@ -28,14 +32,42 @@ export class DailyLogService {
     return value.toISOString().slice(0, 10);
   }
 
+  private encryptSensation(value: number): string {
+    return this.crypto.encryptText(String(value));
+  }
+
+  private decryptSensation(ciphertext: string): number {
+    const plain = this.crypto.decryptText(ciphertext);
+    if (plain === null) {
+      throw new InternalServerErrorException('Daily log sensation unreadable');
+    }
+    const n = Number(plain);
+    if (!Number.isFinite(n) || !Number.isInteger(n)) {
+      throw new InternalServerErrorException('Daily log sensation unreadable');
+    }
+    return n;
+  }
+
+  private encryptPeriodDay(value: boolean): string {
+    return this.crypto.encryptText(value ? '1' : '0');
+  }
+
+  private decryptPeriodDay(ciphertext: string): boolean {
+    const plain = this.crypto.decryptText(ciphertext);
+    if (plain === null) {
+      throw new InternalServerErrorException('Daily log period flag unreadable');
+    }
+    return plain === '1';
+  }
+
   private toView(row: DailyLog): DailyLogView {
-    const decrypted = row.comment ? this.crypto.decryptText(row.comment) : null;
+    const decryptedComment = row.comment ? this.crypto.decryptText(row.comment) : null;
     return {
       id: row.id,
       date: this.formatDate(row.date as unknown as string),
-      painLevel: row.painLevel,
-      comment: decrypted,
-      isPeriodDay: row.isPeriodDay,
+      sensation: this.decryptSensation(row.sensation),
+      comment: decryptedComment,
+      isPeriodDay: this.decryptPeriodDay(row.isPeriodDay),
     };
   }
 
@@ -59,21 +91,23 @@ export class DailyLogService {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       throw new BadRequestException('Invalid date');
     }
-    const encrypted = dto.comment?.length ? this.crypto.encryptText(dto.comment) : null;
+    const encryptedComment = dto.comment?.length ? this.crypto.encryptText(dto.comment) : null;
+    const encSensation = this.encryptSensation(dto.sensation);
+    const encPeriod = this.encryptPeriodDay(dto.isPeriodDay);
     const existing = await this.repo.findOne({ where: { userId, date } });
     if (existing) {
-      existing.painLevel = dto.painLevel;
-      existing.comment = encrypted;
-      existing.isPeriodDay = dto.isPeriodDay;
+      existing.sensation = encSensation;
+      existing.comment = encryptedComment;
+      existing.isPeriodDay = encPeriod;
       const saved = await this.repo.save(existing);
       return this.toView(saved);
     }
     const created = this.repo.create({
       userId,
       date,
-      painLevel: dto.painLevel,
-      comment: encrypted,
-      isPeriodDay: dto.isPeriodDay,
+      sensation: encSensation,
+      comment: encryptedComment,
+      isPeriodDay: encPeriod,
     });
     const saved = await this.repo.save(created);
     return this.toView(saved);

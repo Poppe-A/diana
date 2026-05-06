@@ -1,6 +1,6 @@
 # diana
 
-Tracker quotidien (douleur 0–10 + jour de règles) pour corrélation dans le temps.
+Tracker quotidien (ressenti **−10 à +10** : mal-être/douleur → bien-être, plus jour de règles).
 
 ## Stack
 
@@ -13,10 +13,19 @@ Tracker quotidien (douleur 0–10 + jour de règles) pour corrélation dans le t
 - `yarn back:dev`
 - `yarn front:dev`
 
-## Dev via Docker (recommandé)
+## Dev via Docker (comme Logme)
 
 - Copier `apps/backend/.env.example` vers `apps/backend/.env`
-- Lancer `docker compose up -d --build`
+- `docker compose up -d --build` — les services **back** et **frontend** restent en veille (`sleep infinity`), tu démarres les apps toi-même.
+
+Depuis la racine du monorepo dans le container (`working_dir` : `/app`) :
+
+```bash
+docker exec -it diana-back sh -lc "cd /app && yarn install && yarn workspace backend start:dev"
+docker exec -it diana-front sh -lc "cd /app && yarn install && yarn workspace frontend dev"
+```
+
+(Tu peux adapter : une seule fois `yarn install` si les deux containers partagent déjà le volume `node_modules`.)
 
 ## Ports dev (prévu)
 

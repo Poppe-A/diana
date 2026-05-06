@@ -6,14 +6,12 @@ import {
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
-  Unique,
   UpdateDateColumn,
 } from 'typeorm';
 import { User } from '../user/user.entity';
 
 @Entity('daily_logs')
-@Unique('UQ_daily_log_user_date', ['userId', 'date'])
-@Index('IDX_daily_log_user_date', ['userId', 'date'])
+@Index('UQ_daily_log_user_date', ['userId', 'date'], { unique: true })
 export class DailyLog {
   @PrimaryGeneratedColumn()
   id: number;
@@ -28,14 +26,16 @@ export class DailyLog {
   @Column({ type: 'date' })
   date: string;
 
-  @Column({ type: 'tinyint', unsigned: true })
-  painLevel: number;
+  /** ciphertext AES-256-GCM (entier −10…+10 en clair côté appli) */
+  @Column({ type: 'text' })
+  sensation: string;
 
   @Column({ type: 'text', nullable: true })
   comment: string | null;
 
-  @Column({ type: 'boolean', default: false })
-  isPeriodDay: boolean;
+  /** ciphertext AES-256-GCM (`0` / `1` en clair côté appli) */
+  @Column({ type: 'text' })
+  isPeriodDay: string;
 
   @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;

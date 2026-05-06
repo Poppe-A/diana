@@ -9,9 +9,9 @@
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
     "lint": "tsc --noEmit",
-    "migration:create": "cross-var ts-node node_modules/typeorm/cli.js migration:create ./database/migrations/$npm_config_name",
-    "migrate": "ts-node node_modules/typeorm/cli.js migration:run -d ./database/utils/datasource.ts",
-    "migration:down": "ts-node node_modules/typeorm/cli.js migration:revert -d ./database/utils/datasource.ts"
+    "migration:create": "cross-var node ../../node_modules/typeorm/cli-ts-node-commonjs.js migration:create ./database/migrations/$npm_config_name",
+    "migrate": "node ../../node_modules/typeorm/cli-ts-node-commonjs.js migration:run -d ./database/utils/datasource.ts",
+    "migration:down": "node ../../node_modules/typeorm/cli-ts-node-commonjs.js migration:revert -d ./database/utils/datasource.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
