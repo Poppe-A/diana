@@ -1,0 +1,41 @@
+/** Intensité du flux menstruel (1 = très faible … 5 = très important). */
+export enum PeriodFlowLevel {
+  VeryLight = 1,
+  Light = 2,
+  Medium = 3,
+  Heavy = 4,
+  VeryHeavy = 5,
+}
+
+export const PERIOD_FLOW_ORDER: PeriodFlowLevel[] = [
+  PeriodFlowLevel.VeryLight,
+  PeriodFlowLevel.Light,
+  PeriodFlowLevel.Medium,
+  PeriodFlowLevel.Heavy,
+  PeriodFlowLevel.VeryHeavy,
+];
+
+export const PERIOD_FLOW_LABELS: Record<PeriodFlowLevel, string> = {
+  [PeriodFlowLevel.VeryLight]: 'Très faible',
+  [PeriodFlowLevel.Light]: 'Faible',
+  [PeriodFlowLevel.Medium]: 'Moyen',
+  [PeriodFlowLevel.Heavy]: 'Important',
+  [PeriodFlowLevel.VeryHeavy]: 'Très important',
+};
+
+export type DailyLogView = {
+  id: number;
+  date: string;
+  sensation: number;
+  comment: string | null;
+  isPeriodDay: boolean;
+  periodFlow: PeriodFlowLevel | null;
+  /** 0 = aucune … 10 = très forte */
+  anxietyLevel: number;
+};
+
+export const SENSATION_MIN = -10;
+export const SENSATION_MAX = 10;
+
+export const ANXIETY_MIN = 0;
+export const ANXIETY_MAX = 10;

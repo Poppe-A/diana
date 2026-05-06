@@ -37,6 +37,14 @@ export class DailyLog {
   @Column({ type: 'text' })
   isPeriodDay: string;
 
+  /** Intensité du flux 1…5 ; null si pas de règles ou non renseigné */
+  @Column({ type: 'tinyint', unsigned: true, nullable: true })
+  periodFlow: number | null;
+
+  /** Niveau d'anxiété 0…10 */
+  @Column({ type: 'tinyint', unsigned: true, default: 0 })
+  anxietyLevel: number;
+
   @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;
 

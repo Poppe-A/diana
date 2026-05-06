@@ -19,6 +19,11 @@ export class DailyLogController {
     return this.dailyLogService.findByDate(user.id, today);
   }
 
+  @Get(':date')
+  byDate(@CurrentUser() user: AuthUser, @Param('date') date: string) {
+    return this.dailyLogService.findByDateValidated(user.id, date);
+  }
+
   @Put(':date')
   upsert(
     @CurrentUser() user: AuthUser,

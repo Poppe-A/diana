@@ -8,6 +8,7 @@ import { Repository, Between } from 'typeorm';
 import { DailyLog } from './daily-log.entity';
 import { UpsertDailyLogDto } from './dto/upsert-daily-log.dto';
 import { CryptoService } from '../crypto/crypto.service';
+import { isPeriodFlowLevel, PeriodFlowLevel } from './period-flow-level.enum';
 
 export type DailyLogView = {
   id: number;
@@ -15,6 +16,8 @@ export type DailyLogView = {
   sensation: number;
   comment: string | null;
   isPeriodDay: boolean;
+  periodFlow: PeriodFlowLevel | null;
+  anxietyLevel: number;
 };
 
 @Injectable()
@@ -60,6 +63,16 @@ export class DailyLogService {
     return plain === '1';
   }
 
+  private normalizePeriodFlow(value: number | null): PeriodFlowLevel | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    if (!isPeriodFlowLevel(value)) {
+      throw new InternalServerErrorException('Daily log period flow invalid');
+    }
+    return value;
+  }
+
   private toView(row: DailyLog): DailyLogView {
     const decryptedComment = row.comment ? this.crypto.decryptText(row.comment) : null;
     return {
@@ -68,6 +81,8 @@ export class DailyLogService {
       sensation: this.decryptSensation(row.sensation),
       comment: decryptedComment,
       isPeriodDay: this.decryptPeriodDay(row.isPeriodDay),
+      periodFlow: this.normalizePeriodFlow(row.periodFlow),
+      anxietyLevel: row.anxietyLevel ?? 0,
     };
   }
 
@@ -87,6 +102,13 @@ export class DailyLogService {
     return row ? this.toView(row) : null;
   }
 
+  async findByDateValidated(userId: number, date: string): Promise<DailyLogView | null> {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new BadRequestException('Invalid date');
+    }
+    return this.findByDate(userId, date);
+  }
+
   async upsert(userId: number, date: string, dto: UpsertDailyLogDto): Promise<DailyLogView> {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       throw new BadRequestException('Invalid date');
@@ -94,11 +116,15 @@ export class DailyLogService {
     const encryptedComment = dto.comment?.length ? this.crypto.encryptText(dto.comment) : null;
     const encSensation = this.encryptSensation(dto.sensation);
     const encPeriod = this.encryptPeriodDay(dto.isPeriodDay);
+    const periodFlowValue =
+      dto.isPeriodDay && dto.periodFlow !== undefined ? dto.periodFlow : null;
     const existing = await this.repo.findOne({ where: { userId, date } });
     if (existing) {
       existing.sensation = encSensation;
       existing.comment = encryptedComment;
       existing.isPeriodDay = encPeriod;
+      existing.periodFlow = periodFlowValue;
+      existing.anxietyLevel = dto.anxietyLevel;
       const saved = await this.repo.save(existing);
       return this.toView(saved);
     }
@@ -108,6 +134,8 @@ export class DailyLogService {
       sensation: encSensation,
       comment: encryptedComment,
       isPeriodDay: encPeriod,
+      periodFlow: periodFlowValue,
+      anxietyLevel: dto.anxietyLevel,
     });
     const saved = await this.repo.save(created);
     return this.toView(saved);

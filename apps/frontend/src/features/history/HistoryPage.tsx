@@ -1,111 +1,59 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { LineChart } from '@mui/x-charts/LineChart';
-import { ChartsReferenceLine } from '@mui/x-charts';
-import { Stack, ToggleButton, ToggleButtonGroup, Typography, Box, Chip } from '@mui/material';
-import dayjs from 'dayjs';
-import 'dayjs/locale/fr';
-import { PageLayout } from '../../components/PageLayout';
-import { api } from '../../api/client';
-import type { DailyLogView } from '../dailyLog/DashboardPage';
-
-dayjs.locale('fr');
-
-type RangeKey = '30d' | '3m' | '1y';
-
-function rangeToDates(key: RangeKey): { from: string; to: string } {
-  const to = dayjs();
-  const from =
-    key === '30d' ? to.subtract(30, 'day') : key === '3m' ? to.subtract(3, 'month') : to.subtract(1, 'year');
-  return { from: from.format('YYYY-MM-DD'), to: to.format('YYYY-MM-DD') };
-}
+import { useMemo, useState } from 'react';
+import { Alert, Skeleton, Stack, Typography } from '@mui/material';
+import { AppLayout } from '../../components/layout/AppLayout';
+import { RangeSelector } from './components/RangeSelector';
+import { HistorySummary } from './components/HistorySummary';
+import { HistoryLogEditDialog } from './components/HistoryLogEditDialog';
+import { SensationChart } from './components/SensationChart';
+import { PeriodDaysList } from './components/PeriodDaysList';
+import { useHistoryLogs, type RangeKey } from './hooks/useHistoryLogs';
 
 export function HistoryPage() {
   const [range, setRange] = useState<RangeKey>('30d');
-  const [logs, setLogs] = useState<DailyLogView[]>([]);
+  const { logs, loading, error, periodDates, average, reload } = useHistoryLogs(range);
+  const [editDate, setEditDate] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    const { from, to } = rangeToDates(range);
-    const { data } = await api.get<DailyLogView[]>('/daily-logs', { params: { from, to } });
-    setLogs(data);
-  }, [range]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const dataset = useMemo(
-    () =>
-      logs.map((l) => ({
-        date: l.date,
-        sensation: l.sensation,
-      })),
-    [logs],
+  const initialForEdit = useMemo(
+    () => (editDate ? logs.find((l) => l.date === editDate) : undefined),
+    [editDate, logs],
   );
 
-  const periodDates = useMemo(() => logs.filter((l) => l.isPeriodDay).map((l) => l.date), [logs]);
-
-  const avg =
-    logs.length > 0 ? (logs.reduce((s, l) => s + l.sensation, 0) / logs.length).toFixed(1) : '—';
-
   return (
-    <PageLayout title="Historique">
+    <AppLayout
+      title="Historique"
+      subtitle="Visualise l’évolution de ton ressenti dans le temps"
+      maxWidth="md"
+    >
       <Stack spacing={3}>
-        <ToggleButtonGroup
-          exclusive
-          value={range}
-          onChange={(_, v) => v && setRange(v)}
-          color="primary"
-        >
-          <ToggleButton value="30d">30 jours</ToggleButton>
-          <ToggleButton value="3m">3 mois</ToggleButton>
-          <ToggleButton value="1y">1 an</ToggleButton>
-        </ToggleButtonGroup>
+        <RangeSelector value={range} onChange={setRange} />
 
-        <Typography variant="body2" color="text.secondary">
-          Moyenne du ressenti sur la période : <strong>{avg}</strong> · {logs.length} jour(s){' '}
-          enregistré(s) — échelle −10 (mal-être) à +10 (bien-être).
-        </Typography>
+        <HistorySummary count={logs.length} average={average} periodDays={periodDates.length} />
 
-        {dataset.length === 0 ? (
-          <Typography>Aucune donnée sur cette période.</Typography>
+        {error && <Alert severity="error">{error}</Alert>}
+
+        {loading ? (
+          <Skeleton variant="rounded" height={280} />
         ) : (
-          <Box sx={{ width: '100%', overflowX: 'auto' }}>
-            <LineChart
-              dataset={dataset}
-              xAxis={[{ scaleType: 'band', dataKey: 'date' }]}
-              yAxis={[{ min: -10, max: 10, domainLimit: 'strict' }]}
-              series={[{ dataKey: 'sensation', label: 'Ressenti', showMark: true }]}
-              height={320}
-              margin={{ left: 48, right: 16, top: 16, bottom: 32 }}
-            >
-              <ChartsReferenceLine
-                y={0}
-                lineStyle={{ stroke: '#757575', strokeDasharray: '4 4', opacity: 0.8 }}
-              />
-              {periodDates.map((d) => (
-                <ChartsReferenceLine
-                  key={d}
-                  x={d}
-                  lineStyle={{ stroke: '#ad1457', strokeWidth: 28, opacity: 0.22 }}
-                />
-              ))}
-            </LineChart>
-          </Box>
+          <>
+            {logs.length > 0 ? (
+              <Typography variant="caption" color="text.secondary">
+                Touche un point ou la courbe pour modifier ce jour.
+              </Typography>
+            ) : null}
+            <SensationChart logs={logs} onSelectDate={setEditDate} />
+          </>
         )}
 
-        {periodDates.length > 0 && (
-          <Box>
-            <Typography variant="subtitle2" gutterBottom>
-              Jours de règles
-            </Typography>
-            <Stack direction="row" gap={1} flexWrap="wrap">
-              {periodDates.map((d) => (
-                <Chip key={d} label={dayjs(d).format('D MMM')} size="small" />
-              ))}
-            </Stack>
-          </Box>
-        )}
+        <PeriodDaysList dates={periodDates} onDateClick={setEditDate} />
+
+        <HistoryLogEditDialog
+          open={editDate !== null}
+          date={editDate}
+          initialLog={initialForEdit}
+          onClose={() => setEditDate(null)}
+          onSaved={() => void reload()}
+        />
       </Stack>
-    </PageLayout>
+    </AppLayout>
   );
 }

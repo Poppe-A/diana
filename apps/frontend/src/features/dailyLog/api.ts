@@ -1,0 +1,29 @@
+import { api } from '../../api/client';
+import type { DailyLogView, PeriodFlowLevel } from './types';
+
+export type SaveDailyLogPayload = {
+  sensation: number;
+  comment?: string;
+  isPeriodDay: boolean;
+  periodFlow?: PeriodFlowLevel;
+  anxietyLevel: number;
+};
+
+export async function fetchTodayLog(): Promise<DailyLogView | null> {
+  const { data } = await api.get<DailyLogView | null>('/daily-logs/today');
+  return data;
+}
+
+export async function fetchLogByDate(date: string): Promise<DailyLogView | null> {
+  const { data } = await api.get<DailyLogView | null>(`/daily-logs/${date}`);
+  return data;
+}
+
+export async function saveDailyLog(date: string, payload: SaveDailyLogPayload): Promise<void> {
+  await api.put(`/daily-logs/${date}`, payload);
+}
+
+export async function fetchLogsRange(from: string, to: string): Promise<DailyLogView[]> {
+  const { data } = await api.get<DailyLogView[]>('/daily-logs', { params: { from, to } });
+  return data;
+}
