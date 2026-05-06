@@ -1,0 +1,21 @@
+{
+  "name": "diana",
+  "private": true,
+  "packageManager": "yarn@1.22.22",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "back:dev": "yarn workspace backend start:dev",
+    "front:dev": "yarn workspace frontend dev",
+    "back:build": "yarn workspace backend build",
+    "front:build": "yarn workspace frontend build",
+    "lint": "yarn workspace backend lint && yarn workspace frontend lint",
+    "format": "prettier -w ."
+  },
+  "devDependencies": {
+    "eslint": "^9.29.0",
+    "prettier": "^3.6.2"
+  }
+}
+

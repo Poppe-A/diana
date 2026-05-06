@@ -1,0 +1,12 @@
+# Dockerfile pour le développement (calqué sur logme)
+FROM node:24-alpine
+
+WORKDIR /app
+
+COPY package.json ./
+COPY apps/backend/package.json ./apps/backend/
+COPY apps/frontend/package.json ./apps/frontend/
+
+# Le reste sera monté via volume dans docker-compose.yml
+CMD ["sleep", "infinity"]
+
