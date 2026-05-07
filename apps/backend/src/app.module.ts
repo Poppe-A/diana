@@ -11,6 +11,8 @@ import { UserModule } from './user/user.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { CryptoModule } from './crypto/crypto.module';
 import { DailyLogModule } from './daily-log/daily-log.module';
+import { BodyZoneModule } from './body-zone/body-zone.module';
+import { PhysicalPainModule } from './physical-pain/physical-pain.module';
 
 @Module({
   imports: [
@@ -36,6 +38,8 @@ import { DailyLogModule } from './daily-log/daily-log.module';
     UserModule,
     AuthModule,
     DailyLogModule,
+    BodyZoneModule,
+    PhysicalPainModule,
   ],
   controllers: [AppController],
   providers: [

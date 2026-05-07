@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, IconButton, Skeleton, Stack, TextField, Tooltip, Typography } from '@mui/material';
+import { IconButton, Skeleton, Stack, TextField, Tooltip } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import TodayIcon from '@mui/icons-material/Today';
@@ -9,7 +9,8 @@ import localizedFormat from 'dayjs/plugin/localizedFormat';
 import { AppLayout } from '../../components/layout/AppLayout';
 import { DailyLogForm } from './components/DailyLogForm';
 import { fetchLogByDate } from './api';
-import { SENSATION_MAX, SENSATION_MIN, type DailyLogView } from './types';
+import { type DailyLogView } from './types';
+import { PhysicalPainCard } from '../physicalPain/components/PhysicalPainCard';
 
 dayjs.extend(localizedFormat);
 dayjs.locale('fr');
@@ -29,9 +30,6 @@ export function DashboardPage() {
   const title = useMemo(() => {
     const d = dayjs(selectedDate);
     if (isToday) return d.format('dddd D MMMM');
-    if (selectedDate === dayjs().subtract(1, 'day').format(DATE_FORMAT)) {
-      return `Hier — ${d.format('dddd D MMMM')}`;
-    }
     return d.format('dddd D MMMM YYYY');
   }, [selectedDate, isToday]);
 
@@ -94,27 +92,26 @@ export function DashboardPage() {
           </IconButton>
         </span>
       </Tooltip>
-      <Tooltip title="Aujourd’hui">
-        <span>
-          <IconButton
-            size="small"
-            onClick={() => setSelectedDate(today)}
-            disabled={isToday}
-            aria-label="Aujourd’hui"
-          >
-            <TodayIcon />
-          </IconButton>
-        </span>
-      </Tooltip>
+      {!isToday && (
+        <Tooltip title="Aujourd’hui">
+          <span style={{ marginLeft: 'auto' }}>
+            <IconButton
+              size="large"
+              onClick={() => setSelectedDate(today)}
+              aria-label="Aujourd’hui"
+            >
+              <TodayIcon />
+            </IconButton>
+          </span>
+        </Tooltip>
+      )}
     </Stack>
   );
 
   return (
-    <AppLayout title={title} subtitle={subtitle} action={datePicker}>
+    <AppLayout title={title} subtitle={subtitle}>
       <Stack spacing={3}>
-        <Typography variant="body2" color="text.secondary">
-          Échelle de {SENSATION_MIN} (douleur / mal-être) à {SENSATION_MAX} (bien-être). 0 = neutre.
-        </Typography>
+        {datePicker}
 
         {loading ? (
           <Stack spacing={2}>
@@ -126,11 +123,7 @@ export function DashboardPage() {
           <DailyLogForm key={selectedDate} date={selectedDate} initial={log} />
         )}
 
-        <Alert severity="info" variant="outlined">
-          {isToday
-            ? 'Une seule entrée par jour : si tu enregistres à nouveau, la journée est mise à jour.'
-            : 'Tu modifies une journée passée. Enregistrer mettra à jour les données de ce jour.'}
-        </Alert>
+        <PhysicalPainCard date={selectedDate} />
       </Stack>
     </AppLayout>
   );

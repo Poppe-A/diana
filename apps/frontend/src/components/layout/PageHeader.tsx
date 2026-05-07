@@ -8,24 +8,24 @@ type Props = {
 
 export function PageHeader({ title, subtitle, action }: Props) {
   return (
-    <Stack
-      direction={{ xs: 'column', sm: 'row' }}
-      spacing={1}
-      alignItems={{ xs: 'flex-start', sm: 'center' }}
-      justifyContent="space-between"
-      sx={{ mb: { xs: 2, sm: 3 } }}
-    >
-      <Box>
-        <Typography variant="h4" component="h1">
+    <Stack spacing={1} sx={{ mb: { xs: 2, sm: 3 } }}>
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        spacing={2}
+        columnGap={2}
+      >
+        <Typography variant="h4" component="h1" sx={{ minWidth: 0 }}>
           {title}
         </Typography>
-        {subtitle && (
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            {subtitle}
-          </Typography>
-        )}
-      </Box>
-      {action && <Box sx={{ flexShrink: 0 }}>{action}</Box>}
+        {action ? <Box sx={{ flexShrink: 0 }}>{action}</Box> : null}
+      </Stack>
+      {subtitle ? (
+        <Typography variant="body2" color="text.secondary">
+          {subtitle}
+        </Typography>
+      ) : null}
     </Stack>
   );
 }

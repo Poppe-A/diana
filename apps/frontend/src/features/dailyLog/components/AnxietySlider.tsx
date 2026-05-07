@@ -16,9 +16,6 @@ export function AnxietySlider({ value, onChange }: Props) {
 
   return (
     <Stack spacing={1.5}>
-      <Typography variant="subtitle2" color="text.secondary">
-        Niveau d’anxiété
-      </Typography>
       <Stack direction="row" justifyContent="space-between" sx={{ px: 0.5 }}>
         <Typography variant="caption" color="text.secondary">
           Aucune ({ANXIETY_MIN})

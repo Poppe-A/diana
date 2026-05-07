@@ -1,4 +1,4 @@
-import { Paper, Stack, Typography } from '@mui/material';
+import { Card, CardContent, Stack, Typography } from '@mui/material';
 
 type Props = {
   count: number;
@@ -35,24 +35,25 @@ export function HistorySummary({ count, average, periodDays }: Props) {
           : 'text.primary';
 
   return (
-    <Paper
-      variant="outlined"
-      sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 3 }}
-    >
-      <Stack
-        direction={{ xs: 'row', sm: 'row' }}
-        spacing={{ xs: 2, sm: 4 }}
-        divider={
-          <div style={{ width: 1, alignSelf: 'stretch', background: 'rgba(0,0,0,0.08)' }} />
-        }
+    <Card variant="outlined">
+      <CardContent
+        sx={{
+          p: { xs: 2, sm: 2.5 },
+          '&:last-child': { pb: { xs: 2, sm: 2.5 } },
+        }}
       >
-        <StatBlock label="Ressenti moyen" value={formatAverage(average)} color={avgColor} />
-        <StatBlock label="Jours saisis" value={`${count}`} />
-        <StatBlock label="Jours de règles" value={`${periodDays}`} />
-      </Stack>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-        Échelle de −10 (mal-être) à +10 (bien-être).
-      </Typography>
-    </Paper>
+        <Stack
+          direction={{ xs: 'row', sm: 'row' }}
+          spacing={{ xs: 2, sm: 4 }}
+          divider={
+            <div style={{ width: 1, alignSelf: 'stretch', background: 'rgba(0,0,0,0.08)' }} />
+          }
+        >
+          <StatBlock label="Ressenti moyen" value={formatAverage(average)} color={avgColor} />
+          <StatBlock label="Jours saisis" value={`${count}`} />
+          <StatBlock label="Jours de règles" value={`${periodDays}`} />
+        </Stack>
+      </CardContent>
+    </Card>
   );
 }

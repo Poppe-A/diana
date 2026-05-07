@@ -7,6 +7,10 @@ import { HistoryLogEditDialog } from './components/HistoryLogEditDialog';
 import { SensationChart } from './components/SensationChart';
 import { PeriodDaysList } from './components/PeriodDaysList';
 import { useHistoryLogs, type RangeKey } from './hooks/useHistoryLogs';
+import {
+  CHART_HELP_ZOOM_MIN_POINTS,
+  HistoryChartHelpButton,
+} from './components/HistoryChartHelpButton';
 
 export function HistoryPage() {
   const [range, setRange] = useState<RangeKey>('30d');
@@ -18,11 +22,14 @@ export function HistoryPage() {
     [editDate, logs],
   );
 
+  const chartZoomHelpActive = logs.length >= CHART_HELP_ZOOM_MIN_POINTS;
+
   return (
     <AppLayout
       title="Historique"
       subtitle="Visualise l’évolution de ton ressenti dans le temps"
       maxWidth="md"
+      action={<HistoryChartHelpButton zoomActive={chartZoomHelpActive} />}
     >
       <Stack spacing={3}>
         <RangeSelector value={range} onChange={setRange} />
@@ -35,11 +42,6 @@ export function HistoryPage() {
           <Skeleton variant="rounded" height={280} />
         ) : (
           <>
-            {logs.length > 0 ? (
-              <Typography variant="caption" color="text.secondary">
-                Touche un point ou la courbe pour modifier ce jour.
-              </Typography>
-            ) : null}
             <SensationChart logs={logs} onSelectDate={setEditDate} />
           </>
         )}

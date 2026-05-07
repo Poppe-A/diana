@@ -1,7 +1,23 @@
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
-import { Alert, Box, Button, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Stack, Switch, TextField } from '@mui/material';
+import {
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Divider,
+  FormControl,
+  FormControlLabel,
+  InputLabel,
+  MenuItem,
+  Select,
+  Stack,
+  Switch,
+  TextField,
+  Typography,
+} from '@mui/material';
 import { useEffect, useState } from 'react';
 import { AutoDismissSnackbar } from '../../../components/AutoDismissSnackbar';
 import { AnxietySlider } from './AnxietySlider';
@@ -34,10 +50,7 @@ const schema: yup.ObjectSchema<Form> = yup
     anxietyLevel: yup.number().min(ANXIETY_MIN).max(ANXIETY_MAX).required(),
     comment: yup.string().default(''),
     isPeriodDay: yup.boolean().required(),
-    periodFlow: yup
-      .mixed<'' | PeriodFlowLevel>()
-      .oneOf(PERIOD_FLOW_FORM_VALUES)
-      .default(''),
+    periodFlow: yup.mixed<'' | PeriodFlowLevel>().oneOf(PERIOD_FLOW_FORM_VALUES).default(''),
   })
   .required();
 
@@ -106,118 +119,115 @@ export function DailyLogForm({ date, initial, onSaved }: Props) {
   };
 
   return (
-    <Stack
-      spacing={3}
-      component="form"
-      onSubmit={handleSubmit(onSubmit)}
-      sx={{
-        bgcolor: 'background.paper',
-        border: '1px solid',
-        borderColor: 'divider',
-        borderRadius: 3,
-        p: { xs: 2, sm: 3 },
-      }}
-    >
-      <Box>
-        <Controller
-          name="sensation"
-          control={control}
-          render={({ field }) => (
-            <SensationSlider value={field.value} onChange={field.onChange} />
-          )}
-        />
-      </Box>
+    <Card variant="outlined" component="form" onSubmit={handleSubmit(onSubmit)}>
+      <CardContent>
+        <Stack spacing={3}>
+          <Stack spacing={0.5}>
+            <Typography variant="h6">Ressenti global</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Échelle de {SENSATION_MIN} (douleur / mal-être) à {SENSATION_MAX} (bien-être). 0 =
+              neutre.
+            </Typography>
+          </Stack>
 
-      <Box>
-        <Controller
-          name="anxietyLevel"
-          control={control}
-          render={({ field }) => (
-            <AnxietySlider value={field.value} onChange={field.onChange} />
-          )}
-        />
-      </Box>
+          <Box>
+            <Controller
+              name="sensation"
+              control={control}
+              render={({ field }) => (
+                <SensationSlider value={field.value} onChange={field.onChange} />
+              )}
+            />
+          </Box>
 
-      <Controller
-        name="isPeriodDay"
-        control={control}
-        render={({ field }) => (
-          <FormControlLabel
-            control={
-              <Switch
-                checked={field.value}
-                onChange={(_, checked) => {
-                  field.onChange(checked);
-                  if (!checked) {
-                    setValue('periodFlow', '', { shouldDirty: true });
-                  }
-                }}
+          <Box>
+            <Typography variant="h6">Niveau d’anxiété</Typography>
+            <Controller
+              name="anxietyLevel"
+              control={control}
+              render={({ field }) => (
+                <AnxietySlider value={field.value} onChange={field.onChange} />
+              )}
+            />
+          </Box>
+
+          <Controller
+            name="isPeriodDay"
+            control={control}
+            render={({ field }) => (
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={field.value}
+                    onChange={(_, checked) => {
+                      field.onChange(checked);
+                      if (!checked) {
+                        setValue('periodFlow', '', { shouldDirty: true });
+                      }
+                    }}
+                  />
+                }
+                label="Règles aujourd’hui"
               />
-            }
-            label="Règles aujourd’hui"
+            )}
           />
-        )}
-      />
 
-      {isPeriodDay && (
-        <Controller
-          name="periodFlow"
-          control={control}
-          render={({ field }) => (
-            <FormControl fullWidth>
-              <InputLabel id="daily-log-period-flow-label">Intensité du flux</InputLabel>
-              <Select
-                {...field}
-                labelId="daily-log-period-flow-label"
-                label="Intensité du flux"
-                value={field.value}
-              >
-                <MenuItem value="">
-                  <em>Non renseigné</em>
-                </MenuItem>
-                {PERIOD_FLOW_ORDER.map((level) => (
-                  <MenuItem key={level} value={level}>
-                    {PERIOD_FLOW_LABELS[level]}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+          {isPeriodDay && (
+            <Controller
+              name="periodFlow"
+              control={control}
+              render={({ field }) => (
+                <FormControl fullWidth>
+                  <InputLabel id="daily-log-period-flow-label">Intensité du flux</InputLabel>
+                  <Select
+                    {...field}
+                    labelId="daily-log-period-flow-label"
+                    label="Intensité du flux"
+                    value={field.value}
+                  >
+                    <MenuItem value="">
+                      <em>Non renseigné</em>
+                    </MenuItem>
+                    {PERIOD_FLOW_ORDER.map((level) => (
+                      <MenuItem key={level} value={level}>
+                        {PERIOD_FLOW_LABELS[level]}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
+            />
           )}
-        />
-      )}
 
-      <Controller
-        name="comment"
-        control={control}
-        render={({ field }) => (
-          <TextField
-            {...field}
-            label="Commentaire (optionnel)"
-            multiline
-            minRows={3}
-            placeholder="Comment se sent ton corps aujourd’hui ?"
+          <Divider sx={{ mx: -2, borderColor: 'divider' }} />
+
+          <Controller
+            name="comment"
+            control={control}
+            render={({ field }) => (
+              <TextField
+                {...field}
+                label="Commentaire (optionnel)"
+                multiline
+                minRows={3}
+                placeholder="Comment se sent ton corps aujourd’hui ?"
+              />
+            )}
           />
-        )}
-      />
 
-      {error && <Alert severity="error">{error}</Alert>}
+          {error && <Alert severity="error">{error}</Alert>}
 
-      <AutoDismissSnackbar
-        open={successToast !== null && !isDirty}
-        message={successToast ?? ''}
-        onClose={() => setSuccessToast(null)}
-      />
+          <AutoDismissSnackbar
+            open={successToast !== null && !isDirty}
+            message={successToast ?? ''}
+            onClose={() => setSuccessToast(null)}
+          />
 
-      <Button
-        type="submit"
-        variant="contained"
-        size="large"
-        disabled={isSubmitting}
-        fullWidth
-        sx={{ alignSelf: { sm: 'flex-end' }, minWidth: { sm: 220 } }}
-      >
-        Enregistrer
-      </Button>
-    </Stack>
+          <Button type="submit" variant="contained" size="medium" disabled={isSubmitting} fullWidth>
+            Enregistrer
+          </Button>
+        </Stack>
+      </CardContent>
+    </Card>
   );
 }

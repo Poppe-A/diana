@@ -1,12 +1,10 @@
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import {
   Box,
+  Card,
+  CardContent,
   FormControlLabel,
-  IconButton,
-  Paper,
   Stack,
   Switch,
-  Tooltip,
   Typography,
   useMediaQuery,
   useTheme,
@@ -42,14 +40,12 @@ import {
 import type { ComponentProps } from 'react';
 import type { LineItemIdentifier } from '@mui/x-charts/models';
 import { PERIOD_FLOW_LABELS, type DailyLogView, type PeriodFlowLevel } from '../../dailyLog/types';
+import { CHART_HELP_ZOOM_MIN_POINTS } from './HistoryChartHelpButton';
 
 type Props = {
   logs: DailyLogView[];
   onSelectDate?: (date: string) => void;
 };
-
-/** Au-delà de ce nombre de jours, zoom + pan sur l’axe X (Y reste −10…10). `filterMode: keep` pour garder les indices alignés avec `logs`. */
-const TIMELINE_ZOOM_MIN_POINTS = 20;
 
 /** Anxiété saisie sur 0…10, même axe vertical que le ressenti : 0 → −10, 10 → +10 (linéaire). */
 function anxietyLevelToChartY(anxiety01To10: number): number {
@@ -183,55 +179,6 @@ function periodFlowHeightFraction(flow: PeriodFlowLevel | null): number {
 /** Remplissage des bandes « jour de règles » (couleur unique ; seule la hauteur varie avec le flux). */
 function periodBandFill(theme: Theme): string {
   return alpha(theme.palette.error.light, 0.22);
-}
-
-function ChartLegendHelpTooltip({ zoomActive }: { zoomActive: boolean }) {
-  return (
-    <Tooltip
-      title={
-        <Box sx={{ py: 0.25, maxWidth: 288 }}>
-          <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.75 }}>
-            Lecture du graphe
-          </Typography>
-          <Typography variant="body2" component="div" sx={{ mb: 1 }}>
-            La courbe bleue indique ton ressenti du jour (−10 à +10). Survole ou pose le doigt sur
-            un jour pour voir le détail ; un clic ouvre la saisie pour cette date.
-          </Typography>
-          <Typography variant="body2" component="div" sx={{ mb: 1 }}>
-            Tu peux masquer ou afficher les bandes « jour de règles » et la courbe d’anxiété avec
-            les interrupteurs sous la légende ; le ressenti reste toujours visible. L’anxiété est
-            saisie de 0 à 10 mais tracée sur la même échelle −10…+10 que le ressenti (0 → −10, 10 →
-            +10).
-          </Typography>
-          <Typography variant="body2" component="div" sx={{ mb: zoomActive ? 1 : 0 }}>
-            Les bandes roses signalent les jours de règles : plus la bande est haute, plus le flux
-            menstruel renseigné est intense (cinq niveaux possibles). La couleur ne change pas :
-            seule la hauteur traduit l’intensité.
-          </Typography>
-          {zoomActive ? (
-            <Typography variant="body2" component="div">
-              Sur une longue période tu peux zoomer (pincement à deux doigts), faire défiler
-              horizontalement ou utiliser le curseur sous le graphe.
-            </Typography>
-          ) : null}
-        </Box>
-      }
-      arrow
-      placement="top"
-      enterTouchDelay={0}
-      leaveTouchDelay={4000}
-      slotProps={{ tooltip: { sx: { maxWidth: 320 } } }}
-    >
-      <IconButton
-        size="small"
-        color="inherit"
-        aria-label="Aide sur la lecture du graphe"
-        sx={{ color: 'text.secondary', p: 0.25 }}
-      >
-        <HelpOutlineIcon sx={{ fontSize: 18 }} />
-      </IconButton>
-    </Tooltip>
-  );
 }
 
 function formatTick(value: string, isMobile: boolean): string {
@@ -429,8 +376,8 @@ export function SensationChart({ logs, onSelectDate }: Props) {
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const chartHeight = isMobile ? 300 : 320;
 
-  const [showPeriodBands, setShowPeriodBands] = useState(true);
-  const [showAnxietySeries, setShowAnxietySeries] = useState(true);
+  const [showPeriodBands, setShowPeriodBands] = useState(false);
+  const [showAnxietySeries, setShowAnxietySeries] = useState(false);
 
   const periodBands = useMemo(
     () => logs.filter((l) => l.isPeriodDay).map((l) => ({ date: l.date, flow: l.periodFlow })),
@@ -441,9 +388,11 @@ export function SensationChart({ logs, onSelectDate }: Props) {
 
   if (logs.length === 0) {
     return (
-      <Paper variant="outlined" sx={{ p: 4, textAlign: 'center', borderRadius: 3 }}>
-        <Typography color="text.secondary">Aucune donnée sur cette période.</Typography>
-      </Paper>
+      <Card variant="outlined">
+        <CardContent sx={{ p: 4, textAlign: 'center', '&:last-child': { pb: 4 } }}>
+          <Typography color="text.secondary">Aucune donnée sur cette période.</Typography>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -460,7 +409,7 @@ export function SensationChart({ logs, onSelectDate }: Props) {
       ? ('auto' as const)
       : (_value: unknown, index: number) => index % tickStep === 0;
 
-  const timelineZoomActive = logs.length >= TIMELINE_ZOOM_MIN_POINTS;
+  const timelineZoomActive = logs.length >= CHART_HELP_ZOOM_MIN_POINTS;
 
   const xAxisConfig = useMemo(
     () => ({
@@ -524,13 +473,18 @@ export function SensationChart({ logs, onSelectDate }: Props) {
 
   const showMarks = !isMobile || logs.length <= 14;
 
+  const legendSeriesSwatchSx = {
+    width: 24,
+    height: 6,
+    borderRadius: 1,
+  } as const;
+
   return (
-    <Paper
+    <Card
       variant="outlined"
       sx={{
         overflow: 'hidden',
         p: { xs: 1, sm: 2 },
-        borderRadius: 3,
         width: '100%',
         maxWidth: '100%',
         mx: 0,
@@ -542,7 +496,7 @@ export function SensationChart({ logs, onSelectDate }: Props) {
           <Stack
             direction="row"
             alignItems="center"
-            justifyContent="center"
+            justifyContent="flex-start"
             flexWrap="wrap"
             sx={{
               pt: { xs: 1.5, sm: 0 },
@@ -552,14 +506,7 @@ export function SensationChart({ logs, onSelectDate }: Props) {
             }}
           >
             <Stack direction="row" alignItems="center" spacing={1}>
-              <Box
-                sx={{
-                  width: 28,
-                  height: 3,
-                  bgcolor: 'primary.main',
-                  borderRadius: 1,
-                }}
-              />
+              <Box sx={{ ...legendSeriesSwatchSx, bgcolor: 'primary.main' }} />
               <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
                 Ressenti
               </Typography>
@@ -584,25 +531,17 @@ export function SensationChart({ logs, onSelectDate }: Props) {
             ) : null}
             {showAnxietySeries ? (
               <Stack direction="row" alignItems="center" spacing={1}>
-                <Box
-                  sx={{
-                    width: 28,
-                    height: 3,
-                    bgcolor: 'warning.main',
-                    borderRadius: 1,
-                  }}
-                />
+                <Box sx={{ ...legendSeriesSwatchSx, bgcolor: 'warning.main' }} />
                 <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
                   Anxiété
                 </Typography>
               </Stack>
             ) : null}
-            <ChartLegendHelpTooltip zoomActive={timelineZoomActive} />
           </Stack>
           <Stack
             direction="row"
             alignItems="center"
-            justifyContent="center"
+            justifyContent="flex-start"
             flexWrap="wrap"
             sx={{ gap: { xs: 0.5, sm: 1 }, columnGap: 2 }}
           >
@@ -748,6 +687,6 @@ export function SensationChart({ logs, onSelectDate }: Props) {
           )}
         </Box>
       </Stack>
-    </Paper>
+    </Card>
   );
 }
