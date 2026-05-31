@@ -1,129 +1,75 @@
-import { useEffect, useMemo, useState } from 'react';
-import { IconButton, Skeleton, Stack, TextField, Tooltip } from '@mui/material';
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import TodayIcon from '@mui/icons-material/Today';
+import { Stack } from '@mui/material';
 import dayjs from 'dayjs';
 import 'dayjs/locale/fr';
 import localizedFormat from 'dayjs/plugin/localizedFormat';
+import { useMemo } from 'react';
 import { AppLayout } from '../../components/layout/AppLayout';
-import { DailyLogForm } from './components/DailyLogForm';
-import { fetchLogByDate } from './api';
-import { type DailyLogView } from './types';
-import { PhysicalPainCard } from '../physicalPain/components/PhysicalPainCard';
+import { DailyLogDatePicker } from './components/DailyLogDatePicker';
+import { DashboardDayPanel } from './components/DashboardDayPanel';
+import { DashboardLoadingSkeleton } from './components/DashboardLoadingSkeleton';
+import { DashboardTodayOnboarding } from './components/DashboardTodayOnboarding';
+import { useDailyLog } from './hooks/useDailyLog';
+import { useSelectedDate } from './hooks/useSelectedDate';
+import { useTodayOnboarding } from './hooks/useTodayOnboarding';
+import { getDashboardHeader } from './utils/dashboardHeader';
 
 dayjs.extend(localizedFormat);
 dayjs.locale('fr');
 
-const DATE_FORMAT = 'YYYY-MM-DD';
-
 export function DashboardPage() {
-  const today = dayjs().format(DATE_FORMAT);
-  const [selectedDate, setSelectedDate] = useState<string>(today);
+  const { today, selectedDate, isToday, isFuture, shiftDay, selectDate, goToToday } =
+    useSelectedDate();
+  const { log, loading, reload } = useDailyLog(selectedDate);
+  const onboarding = useTodayOnboarding({ today, isToday, logLoading: loading, log });
 
-  const [log, setLog] = useState<DailyLogView | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const isToday = selectedDate === today;
-  const isFuture = dayjs(selectedDate).isAfter(today, 'day');
-
-  const title = useMemo(() => {
-    const d = dayjs(selectedDate);
-    if (isToday) return d.format('dddd D MMMM');
-    return d.format('dddd D MMMM YYYY');
-  }, [selectedDate, isToday]);
-
-  const subtitle = isToday
-    ? 'Comment tu te sens aujourd’hui ?'
-    : 'Mets à jour les données de ce jour';
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    void (async () => {
-      try {
-        const data = await fetchLogByDate(selectedDate);
-        if (!cancelled) setLog(data);
-      } catch {
-        if (!cancelled) setLog(null);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedDate]);
-
-  const shiftDay = (delta: number) => {
-    setSelectedDate((current) => dayjs(current).add(delta, 'day').format(DATE_FORMAT));
-  };
-
-  const handleDateChange = (value: string) => {
-    if (!value) return;
-    if (dayjs(value).isAfter(today, 'day')) return;
-    setSelectedDate(value);
-  };
-
-  const datePicker = (
-    <Stack direction="row" spacing={0.5} alignItems="center">
-      <Tooltip title="Jour précédent">
-        <IconButton size="small" onClick={() => shiftDay(-1)} aria-label="Jour précédent">
-          <ChevronLeftIcon />
-        </IconButton>
-      </Tooltip>
-      <TextField
-        type="date"
-        size="small"
-        value={selectedDate}
-        onChange={(e) => handleDateChange(e.target.value)}
-        inputProps={{ max: today, 'aria-label': 'Choisir une date' }}
-        sx={{ width: { xs: 150, sm: 170 } }}
-      />
-      <Tooltip title="Jour suivant">
-        <span>
-          <IconButton
-            size="small"
-            onClick={() => shiftDay(1)}
-            disabled={isToday || isFuture}
-            aria-label="Jour suivant"
-          >
-            <ChevronRightIcon />
-          </IconButton>
-        </span>
-      </Tooltip>
-      {!isToday && (
-        <Tooltip title="Aujourd’hui">
-          <span style={{ marginLeft: 'auto' }}>
-            <IconButton
-              size="large"
-              onClick={() => setSelectedDate(today)}
-              aria-label="Aujourd’hui"
-            >
-              <TodayIcon />
-            </IconButton>
-          </span>
-        </Tooltip>
-      )}
-    </Stack>
+  const header = useMemo(
+    () =>
+      getDashboardHeader({
+        selectedDate,
+        isToday,
+        todayPhase: isToday ? onboarding.phase : null,
+      }),
+    [selectedDate, isToday, onboarding.phase],
   );
 
-  return (
-    <AppLayout title={title} subtitle={subtitle}>
-      <Stack spacing={3}>
-        {datePicker}
+  const handleWizardComplete = () => {
+    void reload().then(() => onboarding.completeWizard());
+  };
 
-        {loading ? (
-          <Stack spacing={2}>
-            <Skeleton variant="rounded" height={120} />
-            <Skeleton variant="rounded" height={120} />
-            <Skeleton variant="rounded" height={56} />
-          </Stack>
-        ) : (
-          <DailyLogForm key={selectedDate} date={selectedDate} initial={log} />
+  const handleLogSaved = () => {
+    void reload();
+  };
+
+  return (
+    <AppLayout title={header.title} subtitle={header.subtitle}>
+      <Stack spacing={3}>
+        {onboarding.showDatePicker && (
+          <DailyLogDatePicker
+            selectedDate={selectedDate}
+            today={today}
+            isToday={isToday}
+            isFuture={isFuture}
+            onShiftDay={shiftDay}
+            onSelectDate={selectDate}
+            onGoToToday={goToToday}
+          />
         )}
 
-        <PhysicalPainCard date={selectedDate} />
+        {isToday ? (
+          <DashboardTodayOnboarding
+            phase={onboarding.phase}
+            today={today}
+            log={log}
+            loading={loading}
+            onStartWizard={onboarding.startWizard}
+            onWizardComplete={handleWizardComplete}
+            onLogSaved={handleLogSaved}
+          />
+        ) : loading ? (
+          <DashboardLoadingSkeleton />
+        ) : (
+          <DashboardDayPanel date={selectedDate} log={log} onLogSaved={handleLogSaved} />
+        )}
       </Stack>
     </AppLayout>
   );

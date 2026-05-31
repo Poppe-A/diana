@@ -45,6 +45,10 @@ export class DailyLog {
   @Column({ type: 'tinyint', unsigned: true, default: 0 })
   anxietyLevel: number;
 
+  /** Qualité du sommeil 0…10 */
+  @Column({ type: 'tinyint', unsigned: true, default: 0 })
+  sleepQuality: number;
+
   @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;
 

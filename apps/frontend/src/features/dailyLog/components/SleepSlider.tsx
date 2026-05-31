@@ -1,5 +1,5 @@
 import { Slider, Stack, Typography, useMediaQuery, useTheme } from '@mui/material';
-import { ANXIETY_MAX, ANXIETY_MIN } from '../types';
+import { SLEEP_QUALITY_MAX, SLEEP_QUALITY_MIN } from '../types';
 
 const step = 1;
 const desktopMarks = [0, 5, 10].map((value) => ({ value, label: `${value}` }));
@@ -10,7 +10,7 @@ type Props = {
   onChange: (value: number) => void;
 };
 
-export function AnxietySlider({ value, onChange }: Props) {
+export function SleepSlider({ value, onChange }: Props) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
@@ -18,18 +18,18 @@ export function AnxietySlider({ value, onChange }: Props) {
     <Stack spacing={1.5}>
       <Stack direction="row" justifyContent="space-between" sx={{ px: 0.5 }}>
         <Typography variant="caption" color="text.secondary">
-          Aucune ({ANXIETY_MIN})
+          Très mauvais ({SLEEP_QUALITY_MIN})
         </Typography>
         <Typography variant="caption" color="text.secondary">
-          Très forte ({ANXIETY_MAX})
+          Excellent ({SLEEP_QUALITY_MAX})
         </Typography>
       </Stack>
       <Slider
         valueLabelDisplay="on"
         step={step}
         marks={isMobile ? mobileMarks : desktopMarks}
-        min={ANXIETY_MIN}
-        max={ANXIETY_MAX}
+        min={SLEEP_QUALITY_MIN}
+        max={SLEEP_QUALITY_MAX}
         value={value}
         onChange={(_, v) => onChange(v as number)}
         sx={{
@@ -42,7 +42,7 @@ export function AnxietySlider({ value, onChange }: Props) {
             opacity: 1,
             borderRadius: 5,
             background:
-              'linear-gradient(90deg, rgb(224, 224, 224) 0%, rgb(255, 183, 77) 50%, rgb(230, 81, 0) 100%)',
+              'linear-gradient(90deg, rgb(255, 255, 255) 0%, rgb(221, 214, 254) 45%, rgb(49, 16, 117) 100%)',
           },
           '& .MuiSlider-track': {
             height: 10,

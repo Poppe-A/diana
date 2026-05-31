@@ -53,6 +53,14 @@ function anxietyLevelToChartY(anxiety01To10: number): number {
   return -10 + (x / 10) * 20;
 }
 
+/** Sommeil saisie sur 0…10, même axe vertical que le ressenti. */
+function sleepQualityToChartY(sleep0To10: number): number {
+  const x = Math.min(10, Math.max(0, sleep0To10));
+  return -10 + (x / 10) * 20;
+}
+
+const SLEEP_CHART_COLOR = '#5b21b6';
+
 /** Épaisseur invisible de la zone cliquable autour de la courbe (SVG stroke). */
 const LINE_HIT_STROKE_PX = 18;
 
@@ -197,15 +205,19 @@ function LogTooltipBody({
   row,
   showPeriodDetails,
   showAnxiety,
+  showSleep,
 }: {
   row: DailyLogView;
   showPeriodDetails: boolean;
   showAnxiety: boolean;
+  showSleep: boolean;
 }) {
   const theme = useTheme();
   const scoreColor = sensationValueColor(row.sensation, theme);
   const anxietyY = anxietyLevelToChartY(row.anxietyLevel ?? 0);
   const anxietyColor = sensationValueColor(anxietyY, theme);
+  const sleepY = sleepQualityToChartY(row.sleepQuality ?? 0);
+  const sleepColor = sensationValueColor(sleepY, theme);
 
   return (
     <Box sx={{ display: 'block', lineHeight: 1.45, overflowWrap: 'break-word' }}>
@@ -225,6 +237,19 @@ function LogTooltipBody({
           </Typography>
           <Typography component="div" variant="caption" color="text.secondary" display="block">
             Saisie : {row.anxietyLevel ?? 0} / 10
+          </Typography>
+        </>
+      ) : null}
+      {showSleep ? (
+        <>
+          <Typography component="div" variant="body2">
+            Sommeil (graphe, −10…+10) :{' '}
+            <Box component="span" sx={{ color: sleepColor, fontWeight: 600 }}>
+              {sleepY}
+            </Box>
+          </Typography>
+          <Typography component="div" variant="caption" color="text.secondary" display="block">
+            Saisie : {row.sleepQuality ?? 0} / 10
           </Typography>
         </>
       ) : null}
@@ -252,10 +277,12 @@ function SensationAxisTooltipContent({
   logs,
   showPeriodDetails,
   showAnxiety,
+  showSleep,
 }: {
   logs: DailyLogView[];
   showPeriodDetails: boolean;
   showAnxiety: boolean;
+  showSleep: boolean;
 }) {
   const tooltipData = useAxesTooltip();
 
@@ -293,6 +320,7 @@ function SensationAxisTooltipContent({
                         row={row}
                         showPeriodDetails={showPeriodDetails}
                         showAnxiety={showAnxiety}
+                        showSleep={showSleep}
                       />
                     </ChartsTooltipCell>
                   </ChartsTooltipRow>
@@ -378,6 +406,7 @@ export function SensationChart({ logs, onSelectDate }: Props) {
 
   const [showPeriodBands, setShowPeriodBands] = useState(false);
   const [showAnxietySeries, setShowAnxietySeries] = useState(false);
+  const [showSleepSeries, setShowSleepSeries] = useState(false);
 
   const periodBands = useMemo(
     () => logs.filter((l) => l.isPeriodDay).map((l) => ({ date: l.date, flow: l.periodFlow })),
@@ -400,6 +429,7 @@ export function SensationChart({ logs, onSelectDate }: Props) {
     date: l.date,
     sensation: l.sensation,
     anxietyChartY: anxietyLevelToChartY(l.anxietyLevel ?? 0),
+    sleepChartY: sleepQualityToChartY(l.sleepQuality ?? 0),
   }));
 
   const targetTicks = isMobile ? 5 : 8;
@@ -464,12 +494,13 @@ export function SensationChart({ logs, onSelectDate }: Props) {
             logs={logs}
             showPeriodDetails={showPeriodBands}
             showAnxiety={showAnxietySeries}
+            showSleep={showSleepSeries}
           />
         </ChartsTooltipContainer>
       );
     }
     return ChartTooltipSlot;
-  }, [logs, showPeriodBands, showAnxietySeries]);
+  }, [logs, showPeriodBands, showAnxietySeries, showSleepSeries]);
 
   const showMarks = !isMobile || logs.length <= 14;
 
@@ -537,6 +568,14 @@ export function SensationChart({ logs, onSelectDate }: Props) {
                 </Typography>
               </Stack>
             ) : null}
+            {showSleepSeries ? (
+              <Stack direction="row" alignItems="center" spacing={1}>
+                <Box sx={{ ...legendSeriesSwatchSx, bgcolor: SLEEP_CHART_COLOR }} />
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                  Sommeil
+                </Typography>
+              </Stack>
+            ) : null}
           </Stack>
           <Stack
             direction="row"
@@ -573,6 +612,22 @@ export function SensationChart({ logs, onSelectDate }: Props) {
               label={
                 <Typography variant="caption" color="text.secondary">
                   Anxiété
+                </Typography>
+              }
+              sx={{ mr: 0, ml: 0 }}
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={showSleepSeries}
+                  onChange={(_, c) => setShowSleepSeries(c)}
+                  inputProps={{ 'aria-label': 'Afficher la courbe de sommeil' }}
+                />
+              }
+              label={
+                <Typography variant="caption" color="text.secondary">
+                  Sommeil
                 </Typography>
               }
               sx={{ mr: 0, ml: 0 }}
@@ -638,6 +693,16 @@ export function SensationChart({ logs, onSelectDate }: Props) {
                           label: '',
                           showMark: showMarks,
                           color: theme.palette.warning.main,
+                        },
+                      ]
+                    : []),
+                  ...(showSleepSeries
+                    ? [
+                        {
+                          dataKey: 'sleepChartY' as const,
+                          label: '',
+                          showMark: showMarks,
+                          color: SLEEP_CHART_COLOR,
                         },
                       ]
                     : []),

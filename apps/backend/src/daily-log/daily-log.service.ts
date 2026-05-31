@@ -18,6 +18,7 @@ export type DailyLogView = {
   isPeriodDay: boolean;
   periodFlow: PeriodFlowLevel | null;
   anxietyLevel: number;
+  sleepQuality: number;
 };
 
 @Injectable()
@@ -83,6 +84,7 @@ export class DailyLogService {
       isPeriodDay: this.decryptPeriodDay(row.isPeriodDay),
       periodFlow: this.normalizePeriodFlow(row.periodFlow),
       anxietyLevel: row.anxietyLevel ?? 0,
+      sleepQuality: row.sleepQuality ?? 0,
     };
   }
 
@@ -118,6 +120,7 @@ export class DailyLogService {
     const encPeriod = this.encryptPeriodDay(dto.isPeriodDay);
     const periodFlowValue =
       dto.isPeriodDay && dto.periodFlow !== undefined ? dto.periodFlow : null;
+    const sleepQuality = dto.sleepQuality ?? 0;
     const existing = await this.repo.findOne({ where: { userId, date } });
     if (existing) {
       existing.sensation = encSensation;
@@ -125,6 +128,8 @@ export class DailyLogService {
       existing.isPeriodDay = encPeriod;
       existing.periodFlow = periodFlowValue;
       existing.anxietyLevel = dto.anxietyLevel;
+      existing.sleepQuality =
+        dto.sleepQuality !== undefined ? dto.sleepQuality : (existing.sleepQuality ?? 0);
       const saved = await this.repo.save(existing);
       return this.toView(saved);
     }
@@ -136,6 +141,7 @@ export class DailyLogService {
       isPeriodDay: encPeriod,
       periodFlow: periodFlowValue,
       anxietyLevel: dto.anxietyLevel,
+      sleepQuality,
     });
     const saved = await this.repo.save(created);
     return this.toView(saved);

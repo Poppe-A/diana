@@ -7,6 +7,7 @@ export type SaveDailyLogPayload = {
   isPeriodDay: boolean;
   periodFlow?: PeriodFlowLevel;
   anxietyLevel: number;
+  sleepQuality?: number;
 };
 
 export async function fetchTodayLog(): Promise<DailyLogView | null> {

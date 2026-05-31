@@ -7,6 +7,11 @@ import {
   Button,
   Card,
   CardContent,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   Divider,
   FormControl,
   FormControlLabel,
@@ -21,6 +26,7 @@ import {
 import { useEffect, useState } from 'react';
 import { AutoDismissSnackbar } from '../../../components/AutoDismissSnackbar';
 import { AnxietySlider } from './AnxietySlider';
+import { SleepSlider } from './SleepSlider';
 import { SensationSlider } from './SensationSlider';
 import {
   ANXIETY_MAX,
@@ -30,13 +36,17 @@ import {
   PeriodFlowLevel,
   SENSATION_MAX,
   SENSATION_MIN,
+  SLEEP_QUALITY_MAX,
+  SLEEP_QUALITY_MIN,
   type DailyLogView,
 } from '../types';
 import { saveDailyLog } from '../api';
+import { draftToSavePayload } from '../dailyLogPayload';
 
 type Form = {
   sensation: number;
   anxietyLevel: number;
+  sleepQuality: number;
   comment: string;
   isPeriodDay: boolean;
   periodFlow: '' | PeriodFlowLevel;
@@ -48,6 +58,7 @@ const schema: yup.ObjectSchema<Form> = yup
   .object({
     sensation: yup.number().min(SENSATION_MIN).max(SENSATION_MAX).required(),
     anxietyLevel: yup.number().min(ANXIETY_MIN).max(ANXIETY_MAX).required(),
+    sleepQuality: yup.number().min(SLEEP_QUALITY_MIN).max(SLEEP_QUALITY_MAX).required(),
     comment: yup.string().default(''),
     isPeriodDay: yup.boolean().required(),
     periodFlow: yup.mixed<'' | PeriodFlowLevel>().oneOf(PERIOD_FLOW_FORM_VALUES).default(''),
@@ -64,6 +75,8 @@ type Props = {
 export function DailyLogForm({ date, initial, onSaved }: Props) {
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pendingValues, setPendingValues] = useState<Form | null>(null);
+  const hasExistingLog = Boolean(initial);
 
   const {
     control,
@@ -76,6 +89,7 @@ export function DailyLogForm({ date, initial, onSaved }: Props) {
     defaultValues: {
       sensation: initial?.sensation ?? 0,
       anxietyLevel: initial?.anxietyLevel ?? 0,
+      sleepQuality: initial?.sleepQuality ?? 0,
       comment: initial?.comment ?? '',
       isPeriodDay: initial?.isPeriodDay ?? false,
       periodFlow: initial?.periodFlow ?? '',
@@ -87,6 +101,7 @@ export function DailyLogForm({ date, initial, onSaved }: Props) {
       reset({
         sensation: initial.sensation,
         anxietyLevel: initial.anxietyLevel ?? 0,
+        sleepQuality: initial.sleepQuality ?? 0,
         comment: initial.comment ?? '',
         isPeriodDay: initial.isPeriodDay,
         periodFlow: initial.periodFlow ?? '',
@@ -100,22 +115,45 @@ export function DailyLogForm({ date, initial, onSaved }: Props) {
     if (isDirty) setSuccessToast(null);
   }, [isDirty]);
 
-  const onSubmit = async (values: Form) => {
+  const persist = async (values: Form) => {
     setError(null);
     try {
-      await saveDailyLog(date, {
-        sensation: values.sensation,
-        anxietyLevel: values.anxietyLevel,
-        comment: values.comment || undefined,
-        isPeriodDay: values.isPeriodDay,
-        ...(values.isPeriodDay && values.periodFlow ? { periodFlow: values.periodFlow } : {}),
-      });
+      await saveDailyLog(
+        date,
+        draftToSavePayload({
+          sensation: values.sensation,
+          anxietyLevel: values.anxietyLevel,
+          sleepQuality: values.sleepQuality,
+          comment: values.comment,
+          isPeriodDay: values.isPeriodDay,
+          periodFlow: values.periodFlow,
+        }),
+      );
       setSuccessToast(`Enregistré à ${new Date().toLocaleTimeString('fr-FR')}.`);
       reset(values);
       onSaved?.();
     } catch {
       setError('Impossible d’enregistrer pour le moment. Réessaie plus tard.');
     }
+  };
+
+  const onSubmit = async (values: Form) => {
+    if (hasExistingLog) {
+      setPendingValues(values);
+      return;
+    }
+    await persist(values);
+  };
+
+  const handleCancelOverwrite = () => {
+    setPendingValues(null);
+  };
+
+  const handleConfirmOverwrite = async () => {
+    if (!pendingValues) return;
+    const values = pendingValues;
+    setPendingValues(null);
+    await persist(values);
   };
 
   return (
@@ -147,6 +185,20 @@ export function DailyLogForm({ date, initial, onSaved }: Props) {
               control={control}
               render={({ field }) => (
                 <AnxietySlider value={field.value} onChange={field.onChange} />
+              )}
+            />
+          </Box>
+
+          <Box>
+            <Typography variant="h6">Sommeil</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Échelle de {SLEEP_QUALITY_MIN} (très mauvais) à {SLEEP_QUALITY_MAX} (excellent).
+            </Typography>
+            <Controller
+              name="sleepQuality"
+              control={control}
+              render={({ field }) => (
+                <SleepSlider value={field.value} onChange={field.onChange} />
               )}
             />
           </Box>
@@ -228,6 +280,35 @@ export function DailyLogForm({ date, initial, onSaved }: Props) {
           </Button>
         </Stack>
       </CardContent>
+
+      <Dialog
+        open={pendingValues !== null}
+        onClose={handleCancelOverwrite}
+        aria-labelledby="daily-log-overwrite-title"
+        aria-describedby="daily-log-overwrite-description"
+      >
+        <DialogTitle id="daily-log-overwrite-title">Écraser les données existantes&nbsp;?</DialogTitle>
+        <DialogContent>
+          <DialogContentText id="daily-log-overwrite-description">
+            Ce jour a déjà été renseigné. En confirmant, les données précédentes seront remplacées
+            par celles que tu viens de saisir. Cette action est irréversible.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCancelOverwrite} disabled={isSubmitting}>
+            Annuler
+          </Button>
+          <Button
+            onClick={handleConfirmOverwrite}
+            variant="contained"
+            color="primary"
+            disabled={isSubmitting}
+            autoFocus
+          >
+            Écraser
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Card>
   );
 }

@@ -32,6 +32,8 @@ export type DailyLogView = {
   periodFlow: PeriodFlowLevel | null;
   /** 0 = aucune … 10 = très forte */
   anxietyLevel: number;
+  /** 0 = très mauvais … 10 = excellent */
+  sleepQuality: number;
 };
 
 export const SENSATION_MIN = -10;
@@ -39,3 +41,6 @@ export const SENSATION_MAX = 10;
 
 export const ANXIETY_MIN = 0;
 export const ANXIETY_MAX = 10;
+
+export const SLEEP_QUALITY_MIN = 0;
+export const SLEEP_QUALITY_MAX = 10;

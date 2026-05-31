@@ -39,6 +39,13 @@ export class UpsertDailyLogDto {
   @Max(10)
   anxietyLevel!: number;
 
+  /** 0 = très mauvais … 10 = excellent */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  sleepQuality?: number;
+
   @ValidateIf((o: UpsertDailyLogDto) => o.isPeriodDay === true)
   @IsOptional()
   @Transform(({ value }) => (value === '' || value === null ? undefined : value))

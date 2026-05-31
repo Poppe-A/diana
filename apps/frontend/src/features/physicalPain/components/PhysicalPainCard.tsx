@@ -19,6 +19,10 @@ import { PainEditorModal } from './PainEditorModal';
 
 type Props = {
   date: string;
+  /** Parcours guidé : Suivant / Passer au lieu du seul Enregistrer. */
+  wizardMode?: boolean;
+  onWizardNext?: () => void;
+  onWizardSkip?: () => void;
 };
 
 function normalizeZones(input: BodyZone[]): BodyZone[] {
@@ -89,7 +93,12 @@ function painsToDraft(rows: PhysicalPainView[]): Record<string, PainEntry> {
   return entriesByZoneCode;
 }
 
-export function PhysicalPainCard({ date }: Props) {
+export function PhysicalPainCard({
+  date,
+  wizardMode = false,
+  onWizardNext,
+  onWizardSkip,
+}: Props) {
   const [zones, setZones] = useState<BodyZone[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -176,7 +185,7 @@ export function PhysicalPainCard({ date }: Props) {
     setSuccessToast(null);
   };
 
-  const handleSaveAll = async () => {
+  const handleSaveAll = async (): Promise<boolean> => {
     setSaving(true);
     setError(null);
     try {
@@ -184,11 +193,22 @@ export function PhysicalPainCard({ date }: Props) {
       const saved = await savePainsForDate(date, pains);
       setDraftByZone(painsToDraft(saved));
       setSuccessToast(`Enregistré à ${new Date().toLocaleTimeString('fr-FR')}.`);
+      return true;
     } catch {
       setError('Impossible d’enregistrer pour le moment. Réessaie plus tard.');
+      return false;
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleWizardNext = async () => {
+    const hasPains = Object.keys(draftByZone).length > 0;
+    if (hasPains) {
+      const ok = await handleSaveAll();
+      if (!ok) return;
+    }
+    onWizardNext?.();
   };
 
   return (
@@ -260,15 +280,38 @@ export function PhysicalPainCard({ date }: Props) {
                 onClose={() => setSuccessToast(null)}
               />
 
-              <Button
-                variant="contained"
-                size="medium"
-                onClick={() => void handleSaveAll()}
-                disabled={saving}
-                fullWidth
-              >
-                Enregistrer
-              </Button>
+              {wizardMode ? (
+                <Stack spacing={1}>
+                  <Button
+                    variant="contained"
+                    size="medium"
+                    onClick={() => void handleWizardNext()}
+                    disabled={saving}
+                    fullWidth
+                  >
+                    Suivant
+                  </Button>
+                  <Button
+                    variant="text"
+                    size="medium"
+                    onClick={() => onWizardSkip?.()}
+                    disabled={saving}
+                    fullWidth
+                  >
+                    Passer cette étape
+                  </Button>
+                </Stack>
+              ) : (
+                <Button
+                  variant="contained"
+                  size="medium"
+                  onClick={() => void handleSaveAll()}
+                  disabled={saving}
+                  fullWidth
+                >
+                  Enregistrer
+                </Button>
+              )}
             </>
           )}
         </Stack>
