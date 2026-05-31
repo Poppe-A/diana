@@ -4,11 +4,10 @@ import {
   Box,
   Card,
   CardContent,
-  FormControlLabel,
+  CircularProgress,
   IconButton,
   Slider,
   Stack,
-  Switch,
   Typography,
   useMediaQuery,
   useTheme,
@@ -63,6 +62,7 @@ import {
   type HistoryViewportStats,
 } from '../utils/historyViewportStats';
 import { CHART_HELP_ZOOM_MIN_POINTS } from './HistoryChartHelpButton';
+import { HistoryChartDisplayMenu } from './HistoryChartDisplayMenu';
 
 /** Hauteur max de la zone événements en haut du tracé (part du plot). */
 const EVENT_BAND_MAX_HEIGHT_RATIO = 0.07;
@@ -72,6 +72,8 @@ type Props = {
   days: DailyLogHistoryDay[];
   range: RangeKey;
   events?: UserEventView[];
+  /** Rechargement de la période : axes visibles, courbes et bandes masquées. */
+  dataLoading?: boolean;
   onSelectDate?: (date: string) => void;
   /** Stats recalculées pour les jours visibles (zoom + défilement). `null` = toute la période. */
   onViewportStatsChange?: (stats: HistoryViewportStats | null) => void;
@@ -701,6 +703,43 @@ function EventRangeBandHighlights({
   );
 }
 
+function unfilledDayBandFill(theme: Theme): string {
+  return alpha(theme.palette.text.secondary, theme.palette.mode === 'dark' ? 0.14 : 0.08);
+}
+
+/** Colonnes grises sur les jours sans saisie (toute la hauteur du tracé). */
+function UnfilledDayBandHighlights({ dates }: { dates: string[] }) {
+  const theme = useTheme();
+  const { top, height } = useDrawingArea();
+  const xScale = useXScale();
+
+  const bandwidth =
+    xScale && typeof xScale === 'function' && 'bandwidth' in xScale
+      ? (xScale as { bandwidth: () => number }).bandwidth()
+      : 0;
+
+  if (!bandwidth || dates.length === 0) return null;
+
+  return (
+    <g aria-hidden pointerEvents="none">
+      {dates.map((d) => {
+        const bandStart = (xScale as (v: string) => number | undefined)(d);
+        if (bandStart === undefined) return null;
+        return (
+          <rect
+            key={d}
+            x={bandStart}
+            y={top}
+            width={bandwidth}
+            height={height}
+            fill={unfilledDayBandFill(theme)}
+          />
+        );
+      })}
+    </g>
+  );
+}
+
 /** Bandes « jour de règles » : hauteur proportionnelle à l’intensité du flux, ancrées en bas de la zone de tracé. */
 function PeriodDayBandHighlights({
   bands,
@@ -770,6 +809,7 @@ export function SensationChart({
   days,
   range,
   events = [],
+  dataLoading = false,
   onSelectDate,
   onViewportStatsChange,
 }: Props) {
@@ -781,11 +821,13 @@ export function SensationChart({
   const {
     showSensationSeries,
     showEventBands,
+    showUnfilledDayBands,
     showPeriodBands,
     showAnxietySeries,
     showSleepSeries,
     setShowSensationSeries,
     setShowEventBands,
+    setShowUnfilledDayBands,
     setShowPeriodBands,
     setShowAnxietySeries,
     setShowSleepSeries,
@@ -1099,6 +1141,18 @@ export function SensationChart({
   }, [days, overviewSmoothConfig]);
 
   const chartLineSeries = useMemo(() => {
+    if (dataLoading) {
+      return [
+        {
+          dataKey: 'sensation' as const,
+          label: '',
+          showMark: false,
+          color: 'transparent',
+          connectNulls: false,
+          curve: lineCurve,
+        },
+      ];
+    }
     const series = [
       ...(showSensationSeries
         ? [
@@ -1148,7 +1202,7 @@ export function SensationChart({
         curve: lineCurve,
       },
     ];
-  }, [lineCurve, showAnxietySeries, showSensationSeries, showSleepSeries]);
+  }, [dataLoading, lineCurve, showAnxietySeries, showSensationSeries, showSleepSeries]);
 
   const targetTicksInViewport = isMobile ? 7 : 10;
   const minPxBetweenTicks = isMobile ? 38 : 46;
@@ -1195,6 +1249,7 @@ export function SensationChart({
   );
 
   const chartTooltipSlot = useMemo(() => {
+    if (dataLoading) return undefined;
     function ChartTooltipSlot(props: ComponentProps<typeof ChartsTooltipContainer>) {
       return (
         <ChartsTooltipContainer {...props}>
@@ -1212,6 +1267,7 @@ export function SensationChart({
     }
     return ChartTooltipSlot;
   }, [
+    dataLoading,
     days,
     events,
     showSensationSeries,
@@ -1227,7 +1283,70 @@ export function SensationChart({
     borderRadius: 1,
   } as const;
 
-  if (days.length === 0) {
+  const chartDisplayMenuOptions = useMemo(
+    () => [
+      {
+        id: 'sensation',
+        label: 'Ressenti',
+        checked: showSensationSeries,
+        onChange: setShowSensationSeries,
+        visible: true,
+      },
+      {
+        id: 'events',
+        label: 'Événements',
+        checked: showEventBands,
+        onChange: setShowEventBands,
+        visible: events.length > 0,
+      },
+      {
+        id: 'unfilled',
+        label: 'Jour non renseigné',
+        checked: showUnfilledDayBands,
+        onChange: setShowUnfilledDayBands,
+        visible: unfilledDates.length > 0,
+      },
+      {
+        id: 'period',
+        label: 'Jour de règles',
+        checked: showPeriodBands,
+        onChange: setShowPeriodBands,
+        visible: true,
+      },
+      {
+        id: 'anxiety',
+        label: 'Anxiété',
+        checked: showAnxietySeries,
+        onChange: setShowAnxietySeries,
+        visible: true,
+      },
+      {
+        id: 'sleep',
+        label: 'Sommeil',
+        checked: showSleepSeries,
+        onChange: setShowSleepSeries,
+        visible: true,
+      },
+    ],
+    [
+      events.length,
+      showAnxietySeries,
+      showEventBands,
+      showPeriodBands,
+      showSensationSeries,
+      showSleepSeries,
+      showUnfilledDayBands,
+      unfilledDates.length,
+      setShowAnxietySeries,
+      setShowEventBands,
+      setShowPeriodBands,
+      setShowSensationSeries,
+      setShowSleepSeries,
+      setShowUnfilledDayBands,
+    ],
+  );
+
+  if (!dataLoading && days.length === 0) {
     return (
       <Card variant="outlined">
         <CardContent sx={{ p: 4, textAlign: 'center', '&:last-child': { pb: 4 } }}>
@@ -1292,10 +1411,13 @@ export function SensationChart({
           },
         }}
       >
-        {showEventBands && eventBandItems.length > 0 ? (
+        {!dataLoading && showUnfilledDayBands && unfilledDates.length > 0 ? (
+          <UnfilledDayBandHighlights dates={unfilledDates} />
+        ) : null}
+        {!dataLoading && showEventBands && eventBandItems.length > 0 ? (
           <EventRangeBandHighlights items={eventBandItems} />
         ) : null}
-        {showPeriodBands ? <PeriodDayBandHighlights bands={periodBands} /> : null}
+        {!dataLoading && showPeriodBands ? <PeriodDayBandHighlights bands={periodBands} /> : null}
         <ChartsReferenceLine
           y={0}
           lineStyle={{
@@ -1304,7 +1426,9 @@ export function SensationChart({
             opacity: 0.6,
           }}
         />
-        <DayColumnHitTargets dates={unfilledDates} onSelectDate={onSelectDate} />
+        {!dataLoading ? (
+          <DayColumnHitTargets dates={unfilledDates} onSelectDate={onSelectDate} />
+        ) : null}
       </LineChart>
     </LineInteractionContext.Provider>
   );
@@ -1313,6 +1437,7 @@ export function SensationChart({
     <Card
       variant="outlined"
       sx={{
+        position: 'relative',
         overflow: 'hidden',
         p: { xs: 1, sm: 2 },
         width: '100%',
@@ -1322,105 +1447,24 @@ export function SensationChart({
       }}
     >
       <Stack spacing={0} sx={{ width: '100%' }}>
-        <Stack spacing={1} sx={{ px: 1, pt: { xs: 1.5, sm: 0 } }}>
-          <Stack
-            direction="row"
-            alignItems="center"
-            justifyContent="flex-start"
-            flexWrap="wrap"
-            sx={{ gap: { xs: 0.5, sm: 1 }, columnGap: 2 }}
-          >
-            <FormControlLabel
-              control={
-                <Switch
-                  size="small"
-                  checked={showSensationSeries}
-                  onChange={(_, checked) => setShowSensationSeries(checked)}
-                  inputProps={{ 'aria-label': 'Afficher la courbe de ressenti' }}
-                />
-              }
-              label={
-                <Typography variant="caption" color="text.secondary">
-                  Ressenti
-                </Typography>
-              }
-              sx={{ mr: 0, ml: 0 }}
-            />
-            {events.length > 0 ? (
-              <FormControlLabel
-                control={
-                  <Switch
-                    size="small"
-                    checked={showEventBands}
-                    onChange={(_, checked) => setShowEventBands(checked)}
-                    inputProps={{ 'aria-label': 'Afficher les événements sur le graphe' }}
-                  />
-                }
-                label={
-                  <Typography variant="caption" color="text.secondary">
-                    Événements
-                  </Typography>
-                }
-                sx={{ mr: 0, ml: 0 }}
-              />
-            ) : null}
-            <FormControlLabel
-              control={
-                <Switch
-                  size="small"
-                  checked={showPeriodBands}
-                  onChange={(_, checked) => setShowPeriodBands(checked)}
-                  inputProps={{ 'aria-label': 'Afficher les jours de règles sur le graphe' }}
-                />
-              }
-              label={
-                <Typography variant="caption" color="text.secondary">
-                  Règles
-                </Typography>
-              }
-              sx={{ mr: 0, ml: 0 }}
-            />
-            <FormControlLabel
-              control={
-                <Switch
-                  size="small"
-                  checked={showAnxietySeries}
-                  onChange={(_, checked) => setShowAnxietySeries(checked)}
-                  inputProps={{ 'aria-label': 'Afficher la courbe d’anxiété' }}
-                />
-              }
-              label={
-                <Typography variant="caption" color="text.secondary">
-                  Anxiété
-                </Typography>
-              }
-              sx={{ mr: 0, ml: 0 }}
-            />
-            <FormControlLabel
-              control={
-                <Switch
-                  size="small"
-                  checked={showSleepSeries}
-                  onChange={(_, checked) => setShowSleepSeries(checked)}
-                  inputProps={{ 'aria-label': 'Afficher la courbe de sommeil' }}
-                />
-              }
-              label={
-                <Typography variant="caption" color="text.secondary">
-                  Sommeil
-                </Typography>
-              }
-              sx={{ mr: 0, ml: 0 }}
-            />
-          </Stack>
-        </Stack>
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            px: 1,
+            pt: { xs: 0.5, sm: 0 },
+            pb: zoomSliderActive ? 0.5 : 0,
+          }}
+        >
+          <HistoryChartDisplayMenu options={chartDisplayMenuOptions} />
+        </Box>
 
         {zoomSliderActive ? (
           <Stack
             direction="row"
             alignItems="center"
             spacing={{ xs: 0.5, sm: 1 }}
-            sx={{ px: 1, pb: 0.5 }}
+            sx={{ width: '100%', px: 1, pb: 0.5, boxSizing: 'border-box' }}
           >
             <IconButton
               size="small"
@@ -1430,20 +1474,16 @@ export function SensationChart({
             >
               <ZoomOutIcon fontSize="small" />
             </IconButton>
-            <Stack spacing={0.25} sx={{ flex: 1, minWidth: 0 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2 }}>
-                Détail
-              </Typography>
-              <Slider
-                size="small"
-                value={pxPerDay}
-                min={sliderMinPxPerDay}
-                max={MAX_PX_PER_DAY}
-                step={SLIDER_STEP}
-                aria-label="Niveau de détail du graphe"
-                onChange={(_, value) => setPxPerDay(Array.isArray(value) ? value[0] : value)}
-              />
-            </Stack>
+            <Slider
+              size="small"
+              value={pxPerDay}
+              min={sliderMinPxPerDay}
+              max={MAX_PX_PER_DAY}
+              step={SLIDER_STEP}
+              aria-label="Niveau de détail du graphe"
+              onChange={(_, value) => setPxPerDay(Array.isArray(value) ? value[0] : value)}
+              sx={{ flex: 1, minWidth: 0, mx: { xs: 0.5, sm: 1 } }}
+            />
             <IconButton
               size="small"
               aria-label="Plus de détail sur le graphe"
@@ -1458,6 +1498,7 @@ export function SensationChart({
         <Box
           ref={measureRef}
           sx={{
+            position: 'relative',
             width: '100%',
             maxWidth: '100%',
             lineHeight: 0,
@@ -1469,6 +1510,7 @@ export function SensationChart({
               width: '100%',
               overflowX: isHorizontallyScrollable ? 'auto' : 'hidden',
               overflowY: 'hidden',
+              pointerEvents: dataLoading ? 'none' : 'auto',
               WebkitOverflowScrolling: 'touch',
               overscrollBehaviorX: 'contain',
               touchAction: timelineScrollActive ? 'none' : 'auto',
@@ -1491,6 +1533,23 @@ export function SensationChart({
               {lineChart ?? <Box sx={{ height: chartHeight }} />}
             </Box>
           </Box>
+          {dataLoading ? (
+            <Box
+              aria-busy
+              aria-label="Chargement du graphe"
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                bgcolor: alpha(theme.palette.background.paper, 0.45),
+                pointerEvents: 'none',
+              }}
+            >
+              <CircularProgress size={22} thickness={4} />
+            </Box>
+          ) : null}
         </Box>
 
         <Stack
@@ -1541,6 +1600,24 @@ export function SensationChart({
               </Box>
               <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
                 Événements
+              </Typography>
+            </Stack>
+          ) : null}
+          {showUnfilledDayBands && unfilledDates.length > 0 ? (
+            <Stack direction="row" alignItems="center" spacing={0.75}>
+              <Box
+                sx={{
+                  width: 11,
+                  height: 14,
+                  flexShrink: 0,
+                  bgcolor: unfilledDayBandFill(theme),
+                  borderRadius: 0,
+                  border: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
+                  boxSizing: 'border-box',
+                }}
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                Jour non renseigné
               </Typography>
             </Stack>
           ) : null}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { HistoryViewportStats } from './utils/historyViewportStats';
-import { Alert, Skeleton, Stack } from '@mui/material';
+import { Alert, Stack } from '@mui/material';
 import { AppLayout } from '../../components/layout/AppLayout';
 import { RangeSelector } from './components/RangeSelector';
 import { HistorySummary } from './components/HistorySummary';
@@ -9,6 +9,7 @@ import { SensationChart } from './components/SensationChart';
 import { PeriodDaysList } from './components/PeriodDaysList';
 import { useHistoryEvents } from './hooks/useHistoryEvents';
 import { rangeToDates, useHistoryLogs, type RangeKey } from './hooks/useHistoryLogs';
+import { resolveChartDays } from './utils/chartDaysForRange';
 import {
   CHART_HELP_ZOOM_MIN_POINTS,
   HistoryChartHelpButton,
@@ -16,9 +17,14 @@ import {
 
 export function HistoryPage() {
   const [range, setRange] = useState<RangeKey>('30d');
-  const { days, filledCount, initialLoading, error, periodDates, average, reload } =
+  const { days, filledCount, initialLoading, isRefreshing, error, periodDates, average, reload } =
     useHistoryLogs(range);
   const { events } = useHistoryEvents(range);
+  const chartDataLoading = initialLoading || isRefreshing;
+  const chartDays = useMemo(
+    () => resolveChartDays(range, days, chartDataLoading),
+    [range, days, chartDataLoading],
+  );
   const [editDate, setEditDate] = useState<string | null>(null);
   const [viewportStats, setViewportStats] = useState<HistoryViewportStats | null>(null);
 
@@ -37,7 +43,7 @@ export function HistoryPage() {
     [editDate, days],
   );
 
-  const chartZoomHelpActive = days.length >= CHART_HELP_ZOOM_MIN_POINTS;
+  const chartZoomHelpActive = chartDays.length >= CHART_HELP_ZOOM_MIN_POINTS;
 
   return (
     <AppLayout
@@ -62,17 +68,14 @@ export function HistoryPage() {
 
         {error && <Alert severity="error">{error}</Alert>}
 
-        {initialLoading ? (
-          <Skeleton variant="rounded" height={280} />
-        ) : (
-          <SensationChart
-            days={days}
-            range={range}
-            events={events}
-            onSelectDate={setEditDate}
-            onViewportStatsChange={handleViewportStatsChange}
-          />
-        )}
+        <SensationChart
+          days={chartDays}
+          range={range}
+          events={events}
+          dataLoading={chartDataLoading}
+          onSelectDate={chartDataLoading ? undefined : setEditDate}
+          onViewportStatsChange={chartDataLoading ? undefined : handleViewportStatsChange}
+        />
 
         <PeriodDaysList dates={periodDates} onDateClick={setEditDate} />
 

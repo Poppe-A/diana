@@ -41,8 +41,9 @@ export function SleepSlider({ value, onChange }: Props) {
             height: 10,
             opacity: 1,
             borderRadius: 5,
+            /** Même teinte #311075, luminosité seule (100 % d’opacité, pas de blanc transparent). */
             background:
-              'linear-gradient(90deg, rgb(255, 255, 255) 0%, rgb(221, 214, 254) 45%, rgb(49, 16, 117) 100%)',
+              'linear-gradient(90deg, hsl(268, 42%, 78%) 0%, hsl(268, 55%, 48%) 50%, hsl(268, 76%, 26%) 100%)',
           },
           '& .MuiSlider-track': {
             height: 10,

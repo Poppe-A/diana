@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dayjs from 'dayjs';
 import { fetchLogsRange } from '../../dailyLog/api';
 import type { DailyLogHistoryDay } from '../../dailyLog/types';
@@ -20,26 +20,30 @@ export function rangeToDates(key: RangeKey): { from: string; to: string } {
 export function useHistoryLogs(range: RangeKey) {
   const [days, setDays] = useState<DailyLogHistoryDay[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const hasLoadedOnceRef = useRef(false);
 
   const load = useCallback(async (background: boolean) => {
-    if (!background) {
+    if (!hasLoadedOnceRef.current && !background) {
       setInitialLoading(true);
+    } else {
+      setIsRefreshing(true);
     }
     setError(null);
     try {
       const { from, to } = rangeToDates(range);
       const data = await fetchLogsRange(from, to);
       setDays(densifyHistoryDays(data, from, to));
+      hasLoadedOnceRef.current = true;
     } catch {
-      if (!background) {
+      if (!hasLoadedOnceRef.current) {
         setDays([]);
       }
       setError('Impossible de charger l’historique.');
     } finally {
-      if (!background) {
-        setInitialLoading(false);
-      }
+      setInitialLoading(false);
+      setIsRefreshing(false);
     }
   }, [range]);
 
@@ -67,6 +71,7 @@ export function useHistoryLogs(range: RangeKey) {
     days,
     filledCount: filledDays.length,
     initialLoading,
+    isRefreshing,
     error,
     reload,
     periodDates,
