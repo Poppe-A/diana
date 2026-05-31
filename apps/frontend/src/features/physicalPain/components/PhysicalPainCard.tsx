@@ -14,7 +14,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AutoDismissSnackbar } from '../../../components/AutoDismissSnackbar';
 import { fetchBodyZones, fetchPainsByDate, savePainsForDate } from '../api';
 import type { BodyZone, BodyZoneView, PainEntry, PhysicalPainView } from '../types';
-import { BodyMap } from './BodyMap';
+import { BodyMapFlip } from './BodyMap';
 import { PainEditorModal } from './PainEditorModal';
 
 type Props = {
@@ -249,7 +249,7 @@ export function PhysicalPainCard({
                   <ToggleButton value="back">Dos</ToggleButton>
                 </ToggleButtonGroup>
 
-                <BodyMap
+                <BodyMapFlip
                   view={view}
                   zones={zones}
                   intensityByZoneCode={intensityByZoneCode}

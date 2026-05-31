@@ -1,4 +1,4 @@
-import { Box } from '@mui/material';
+import { Box, useMediaQuery } from '@mui/material';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme } from '@mui/material/styles';
 import type { BodyZone, BodyZoneView } from '../types';
@@ -177,8 +177,8 @@ export function BodyMap({ view, zones, intensityByZoneCode, onZoneClick }: Props
           aspectRatio: '286 / 651',
           height: 'auto',
           maxHeight: 'clamp(340px, 70vh, 720px)',
-          // Décalage optique : le dessin reste un peu à gauche du cadre du viewBox une fois scalé.
-          transform: 'translateX(4%)',
+          // margin plutôt que transform : translateX casse preserve-3d / backface-visibility du flip.
+          marginLeft: 'calc(4% + 25px)',
         },
         // Pas d’anneau de focus natif sur les zones cliquables :
         // le retour visuel est déjà assuré par le changement de couleur (hover/focus).
@@ -200,6 +200,95 @@ export function BodyMap({ view, zones, intensityByZoneCode, onZoneClick }: Props
           aria-label="Schéma du corps (vue de dos)"
         />
       )}
+    </Box>
+  );
+}
+
+type FlipProps = Props;
+
+/** Retournement 3D avant ↔ dos ; chaque face garde ses propres zones et intensités. */
+export function BodyMapFlip({ view, zones, intensityByZoneCode, onZoneClick }: FlipProps) {
+  const theme = useTheme();
+  const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+
+  if (reduceMotion) {
+    return (
+      <BodyMap
+        view={view}
+        zones={zones}
+        intensityByZoneCode={intensityByZoneCode}
+        onZoneClick={onZoneClick}
+      />
+    );
+  }
+
+  return (
+    <Box
+      sx={{
+        width: '100%',
+        perspective: '1400px',
+        perspectiveOrigin: 'center center',
+      }}
+    >
+      <Box
+        sx={{
+          position: 'relative',
+          width: '100%',
+          aspectRatio: '286 / 651',
+          maxHeight: 'clamp(340px, 70vh, 720px)',
+          mx: 'auto',
+          transformStyle: 'preserve-3d',
+          WebkitTransformStyle: 'preserve-3d',
+          transition: theme.transitions.create('transform', {
+            duration: 600,
+            easing: theme.transitions.easing.easeInOut,
+          }),
+          transform: view === 'back' ? 'rotateY(180deg)' : 'rotateY(0deg)',
+        }}
+      >
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            transform: 'rotateY(0deg)',
+            transformStyle: 'preserve-3d',
+            WebkitTransformStyle: 'preserve-3d',
+            backfaceVisibility: 'hidden',
+            WebkitBackfaceVisibility: 'hidden',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+        >
+          <BodyMap
+            view="front"
+            zones={zones}
+            intensityByZoneCode={intensityByZoneCode}
+            onZoneClick={onZoneClick}
+          />
+        </Box>
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            transformStyle: 'preserve-3d',
+            WebkitTransformStyle: 'preserve-3d',
+            backfaceVisibility: 'hidden',
+            WebkitBackfaceVisibility: 'hidden',
+            transform: 'rotateY(180deg)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+        >
+          <BodyMap
+            view="back"
+            zones={zones}
+            intensityByZoneCode={intensityByZoneCode}
+            onZoneClick={onZoneClick}
+          />
+        </Box>
+      </Box>
     </Box>
   );
 }
