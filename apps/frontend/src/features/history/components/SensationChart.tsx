@@ -1,8 +1,12 @@
+import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import {
   Box,
   Card,
   CardContent,
   FormControlLabel,
+  IconButton,
+  Slider,
   Stack,
   Switch,
   Typography,
@@ -32,6 +36,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -39,12 +44,27 @@ import {
 } from 'react';
 import type { ComponentProps } from 'react';
 import type { LineItemIdentifier } from '@mui/x-charts/models';
-import { PERIOD_FLOW_LABELS, type DailyLogView, type PeriodFlowLevel } from '../../dailyLog/types';
+import {
+  PERIOD_FLOW_LABELS,
+  type DailyLogHistoryDay,
+  type PeriodFlowLevel,
+} from '../../dailyLog/types';
+import { useHistoryChartDisplay } from '../hooks/useHistoryChartDisplay';
+import type { RangeKey } from '../hooks/useHistoryLogs';
+import {
+  computeHistoryViewportStats,
+  computeVisibleDayIndices,
+  isFullTimelineVisible,
+  type HistoryViewportStats,
+} from '../utils/historyViewportStats';
 import { CHART_HELP_ZOOM_MIN_POINTS } from './HistoryChartHelpButton';
 
 type Props = {
-  logs: DailyLogView[];
+  days: DailyLogHistoryDay[];
+  range: RangeKey;
   onSelectDate?: (date: string) => void;
+  /** Stats recalculées pour les jours visibles (zoom + défilement). `null` = toute la période. */
+  onViewportStatsChange?: (stats: HistoryViewportStats | null) => void;
 };
 
 /** Anxiété saisie sur 0…10, même axe vertical que le ressenti : 0 → −10, 10 → +10 (linéaire). */
@@ -60,9 +80,164 @@ function sleepQualityToChartY(sleep0To10: number): number {
 }
 
 const SLEEP_CHART_COLOR = '#5b21b6';
+/** Vert foncé pour la courbe ressenti (distinct du primary mauve de l’app). */
+const SENSATION_CHART_COLOR = '#15803d';
+/** Ambre clair pour l’anxiété (moins soutenu que warning.main). */
+const ANXIETY_CHART_COLOR = '#fbbf24';
 
 /** Épaisseur invisible de la zone cliquable autour de la courbe (SVG stroke). */
 const LINE_HIT_STROKE_PX = 18;
+
+const MAX_PX_PER_DAY = 22;
+const PX_PER_DAY_STEP = 1;
+const SLIDER_STEP = 0.25;
+/** Lissage uniquement vue entièrement dézoomée (curseur « Détail » au minimum). */
+const QUARTER_SMOOTH_WINDOW = 5;
+const YEAR_SMOOTH_WINDOW = 14;
+/** Au-delà de ce zoom relatif, pas de lissage (données brutes). */
+const SMOOTH_MAX_ZOOM_PROGRESS = 0.01;
+
+type OverviewSmoothConfig = {
+  window: number;
+  flatThreshold: number;
+  peakResidualScale: number;
+  minPeakDelta: number;
+};
+
+function clampPxPerDay(value: number, minPxPerDay: number): number {
+  return Math.min(MAX_PX_PER_DAY, Math.max(minPxPerDay, value));
+}
+
+function getOverviewSmoothConfig(
+  range: RangeKey,
+  pxPerDay: number,
+  sliderMinPxPerDay: number,
+  daysLength: number,
+): OverviewSmoothConfig | null {
+  if (daysLength === 0) return null;
+
+  const zoomSpan = MAX_PX_PER_DAY - sliderMinPxPerDay;
+  const zoomProgress = zoomSpan <= 0.01 ? 0 : (pxPerDay - sliderMinPxPerDay) / zoomSpan;
+  if (zoomProgress > SMOOTH_MAX_ZOOM_PROGRESS) return null;
+
+  if (range === '1y') {
+    return {
+      window: YEAR_SMOOTH_WINDOW,
+      flatThreshold: 1.2,
+      peakResidualScale: 9,
+      minPeakDelta: 3,
+    };
+  }
+
+  if (range === '3m') {
+    return {
+      window: QUARTER_SMOOTH_WINDOW,
+      flatThreshold: 1,
+      peakResidualScale: 7.5,
+      minPeakDelta: 2.8,
+    };
+  }
+
+  return null;
+}
+
+function isStrictLocalExtremum(
+  values: (number | null)[],
+  index: number,
+  halfWindow: number,
+): boolean {
+  const value = values[index];
+  if (value === null) return false;
+  let isMin = true;
+  let isMax = true;
+  for (
+    let j = Math.max(0, index - halfWindow);
+    j <= Math.min(values.length - 1, index + halfWindow);
+    j++
+  ) {
+    if (j === index) continue;
+    const neighbor = values[j];
+    if (neighbor === null) continue;
+    if (neighbor < value) isMax = false;
+    if (neighbor > value) isMin = false;
+  }
+  return isMin || isMax;
+}
+
+/** Moyenne glissante sur les jours renseignés ; les jours vides restent null. */
+function smoothNullableSeries(values: (number | null)[], windowSize: number): (number | null)[] {
+  if (windowSize <= 1) return values;
+  return values.map((_value, index) => {
+    if (values[index] === null) return null;
+    const half = Math.floor(windowSize / 2);
+    let sum = 0;
+    let count = 0;
+    for (let j = Math.max(0, index - half); j <= Math.min(values.length - 1, index + half); j++) {
+      const neighbor = values[j];
+      if (neighbor !== null) {
+        sum += neighbor;
+        count += 1;
+      }
+    }
+    return count > 0 ? sum / count : null;
+  });
+}
+
+/**
+ * Lissage marqué sur les zones plates ; restitution progressive (puis complète)
+ * des écarts réellement significatifs — sans lisser les vrais pics.
+ */
+function smoothNullableSeriesWithPeaks(
+  values: (number | null)[],
+  windowSize: number,
+  flatThreshold: number,
+  peakResidualScale: number,
+  minPeakDelta: number,
+): (number | null)[] {
+  const average = smoothNullableSeries(values, windowSize);
+  const half = Math.floor(windowSize / 2);
+  const peakSpan = Math.max(peakResidualScale - flatThreshold, 0.5);
+
+  return values.map((original, index) => {
+    if (original === null || average[index] === null) return average[index];
+    const avg = average[index]!;
+    const residual = original - avg;
+    const absResidual = Math.abs(residual);
+
+    if (absResidual <= flatThreshold) {
+      return avg;
+    }
+
+    const linearWeight = Math.min(1, (absResidual - flatThreshold) / peakSpan);
+    let blend = linearWeight * linearWeight;
+
+    if (absResidual >= minPeakDelta && isStrictLocalExtremum(values, index, half)) {
+      const extremumBoost = 0.85 + 0.15 * Math.min(1, absResidual / peakResidualScale);
+      blend = Math.max(blend, extremumBoost);
+    }
+
+    return avg + residual * blend;
+  });
+}
+
+function applyOverviewSmooth(
+  values: (number | null)[],
+  config: OverviewSmoothConfig,
+): (number | null)[] {
+  return smoothNullableSeriesWithPeaks(
+    values,
+    config.window,
+    config.flatThreshold,
+    config.peakResidualScale,
+    config.minPeakDelta,
+  );
+}
+
+function touchDistance(a: Touch, b: Touch): number {
+  const dx = a.clientX - b.clientX;
+  const dy = a.clientY - b.clientY;
+  return Math.hypot(dx, dy);
+}
 
 function svgEventPoint(svg: SVGSVGElement, event: React.MouseEvent): { x: number; y: number } {
   const pt = svg.createSVGPoint();
@@ -93,7 +268,7 @@ function bandXAxisDataIndex(
 }
 
 const LineInteractionContext = createContext<{
-  logs: DailyLogView[];
+  days: DailyLogHistoryDay[];
   onSelectDate?: (date: string) => void;
 } | null>(null);
 
@@ -124,7 +299,7 @@ function WideHitAnimatedLine(props: AnimatedLineProps) {
 
   const handleHitClick = useCallback(
     (event: React.MouseEvent<SVGPathElement>) => {
-      if (!ctx?.onSelectDate || ctx.logs.length === 0) return;
+      if (!ctx?.onSelectDate || ctx.days.length === 0) return;
       const svg = event.currentTarget.ownerSVGElement;
       if (!svg) return;
       const pt = svgEventPoint(svg, event);
@@ -138,9 +313,9 @@ function WideHitAnimatedLine(props: AnimatedLineProps) {
         pt.x,
         xAxisConfig.reverse,
       );
-      if (dataIndex < 0 || dataIndex >= ctx.logs.length) return;
+      if (dataIndex < 0 || dataIndex >= ctx.days.length) return;
 
-      ctx.onSelectDate(ctx.logs[dataIndex].date);
+      ctx.onSelectDate(ctx.days[dataIndex].date);
     },
     [ctx, instance, xAxisConfig],
   );
@@ -189,35 +364,81 @@ function periodBandFill(theme: Theme): string {
   return alpha(theme.palette.error.light, 0.22);
 }
 
-function formatTick(value: string, isMobile: boolean): string {
+function formatTick(value: string, isMobile: boolean, showMonth: boolean): string {
   const d = dayjs(value);
-  return isMobile ? d.format('DD/MM') : d.format('D MMM');
+  if (isMobile && !showMonth) return d.format('DD/MM');
+  return d.format('D MMM');
 }
 
+function parseColorChannel(color: string): [number, number, number] | null {
+  const normalized = color.trim();
+  if (normalized.startsWith('#')) {
+    const h = normalized.slice(1);
+    if (h.length !== 6) return null;
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  }
+  const rgbMatch = normalized.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  if (!rgbMatch) return null;
+  return [Number(rgbMatch[1]), Number(rgbMatch[2]), Number(rgbMatch[3])];
+}
+
+function lerpChannel(a: number, b: number, t: number): number {
+  return Math.round(a + (b - a) * t);
+}
+
+/** `towardRed` 0 = vert, 1 = rouge. */
+function gradientRedGreen(towardRed: number, theme: Theme): string {
+  const t = Math.min(1, Math.max(0, towardRed));
+  const green = parseColorChannel(theme.palette.success.main);
+  const red = parseColorChannel(theme.palette.error.main);
+  if (!green || !red) {
+    return t >= 0.5 ? theme.palette.error.main : theme.palette.success.main;
+  }
+  return `rgb(${lerpChannel(green[0], red[0], t)}, ${lerpChannel(green[1], red[1], t)}, ${lerpChannel(green[2], red[2], t)})`;
+}
+
+/** −10 → rouge, +10 → vert, 0 → intermédiaire. */
 function sensationValueColor(sensation: number, theme: Theme): string {
-  if (sensation > 0) return theme.palette.success.main;
-  if (sensation < 0) return theme.palette.error.main;
-  return theme.palette.text.primary;
+  const clamped = Math.min(10, Math.max(-10, sensation));
+  const towardRed = 1 - (clamped + 10) / 20;
+  return gradientRedGreen(towardRed, theme);
+}
+
+/** 0 → vert, 10 → rouge (anxiété). `invert` : 0 → rouge, 10 → vert (sommeil). */
+function scale0To10Color(value: number, theme: Theme, invert: boolean): string {
+  const t = Math.min(10, Math.max(0, value)) / 10;
+  const towardRed = invert ? 1 - t : t;
+  return gradientRedGreen(towardRed, theme);
 }
 
 /** Détail du log dans la tooltip (valeur ressenti colorée). */
 function LogTooltipBody({
-  row,
+  day,
   showPeriodDetails,
   showAnxiety,
   showSleep,
 }: {
-  row: DailyLogView;
+  day: DailyLogHistoryDay;
   showPeriodDetails: boolean;
   showAnxiety: boolean;
   showSleep: boolean;
 }) {
   const theme = useTheme();
+
+  if (!day.filled || !day.log) {
+    return (
+      <Typography variant="body2" color="text.secondary">
+        Ce jour n’a pas été renseigné.
+      </Typography>
+    );
+  }
+
+  const row = day.log;
+  const anxietyLevel = row.anxietyLevel ?? 0;
+  const sleepQuality = row.sleepQuality ?? 0;
   const scoreColor = sensationValueColor(row.sensation, theme);
-  const anxietyY = anxietyLevelToChartY(row.anxietyLevel ?? 0);
-  const anxietyColor = sensationValueColor(anxietyY, theme);
-  const sleepY = sleepQualityToChartY(row.sleepQuality ?? 0);
-  const sleepColor = sensationValueColor(sleepY, theme);
+  const anxietyColor = scale0To10Color(anxietyLevel, theme, false);
+  const sleepColor = scale0To10Color(sleepQuality, theme, true);
 
   return (
     <Box sx={{ display: 'block', lineHeight: 1.45, overflowWrap: 'break-word' }}>
@@ -228,30 +449,20 @@ function LogTooltipBody({
         </Box>
       </Typography>
       {showAnxiety ? (
-        <>
-          <Typography component="div" variant="body2">
-            Anxiété (graphe, −10…+10) :{' '}
-            <Box component="span" sx={{ color: anxietyColor, fontWeight: 600 }}>
-              {anxietyY}
-            </Box>
-          </Typography>
-          <Typography component="div" variant="caption" color="text.secondary" display="block">
-            Saisie : {row.anxietyLevel ?? 0} / 10
-          </Typography>
-        </>
+        <Typography component="div" variant="body2">
+          Anxiété :{' '}
+          <Box component="span" sx={{ color: anxietyColor, fontWeight: 600 }}>
+            {anxietyLevel} / 10
+          </Box>
+        </Typography>
       ) : null}
       {showSleep ? (
-        <>
-          <Typography component="div" variant="body2">
-            Sommeil (graphe, −10…+10) :{' '}
-            <Box component="span" sx={{ color: sleepColor, fontWeight: 600 }}>
-              {sleepY}
-            </Box>
-          </Typography>
-          <Typography component="div" variant="caption" color="text.secondary" display="block">
-            Saisie : {row.sleepQuality ?? 0} / 10
-          </Typography>
-        </>
+        <Typography component="div" variant="body2">
+          Sommeil :{' '}
+          <Box component="span" sx={{ color: sleepColor, fontWeight: 600 }}>
+            {sleepQuality} / 10
+          </Box>
+        </Typography>
       ) : null}
       {showPeriodDetails && row.isPeriodDay ? (
         <>
@@ -274,12 +485,12 @@ function LogTooltipBody({
 
 /** Tooltip axe identique au défaut MUI, avec corps enrichi (couleur ressenti + champs log). */
 function SensationAxisTooltipContent({
-  logs,
+  days,
   showPeriodDetails,
   showAnxiety,
   showSleep,
 }: {
-  logs: DailyLogView[];
+  days: DailyLogHistoryDay[];
   showPeriodDetails: boolean;
   showAnxiety: boolean;
   showSleep: boolean;
@@ -300,11 +511,8 @@ function SensationAxisTooltipContent({
             ) : null}
             <tbody>
               {(() => {
-                const row = logs[dataIndex];
-                const hasPoint =
-                  row !== undefined &&
-                  seriesItems.some(({ formattedValue }) => formattedValue != null);
-                if (!hasPoint) return null;
+                const day = days[dataIndex];
+                if (!day) return null;
                 return (
                   <ChartsTooltipRow key="daily-log-detail" className={chartsTooltipClasses.row}>
                     <ChartsTooltipCell
@@ -317,7 +525,7 @@ function SensationAxisTooltipContent({
                       className={`${chartsTooltipClasses.valueCell} ${chartsTooltipClasses.cell}`}
                     >
                       <LogTooltipBody
-                        row={row}
+                        day={day}
                         showPeriodDetails={showPeriodDetails}
                         showAnxiety={showAnxiety}
                         showSleep={showSleep}
@@ -331,6 +539,47 @@ function SensationAxisTooltipContent({
         ),
       )}
     </ChartsTooltipPaper>
+  );
+}
+
+/** Zones cliquables invisibles sur les jours sans saisie (pas de point sur la courbe). */
+function DayColumnHitTargets({
+  dates,
+  onSelectDate,
+}: {
+  dates: string[];
+  onSelectDate?: (date: string) => void;
+}) {
+  const { top, height } = useDrawingArea();
+  const xScale = useXScale();
+
+  const bandwidth =
+    xScale && typeof xScale === 'function' && 'bandwidth' in xScale
+      ? (xScale as { bandwidth: () => number }).bandwidth()
+      : 0;
+
+  if (!bandwidth || !onSelectDate) return null;
+
+  return (
+    <g aria-label="Jours non renseignés">
+      {dates.map((d) => {
+        const bandStart = (xScale as (v: string) => number | undefined)(d);
+        if (bandStart === undefined) return null;
+        return (
+          <rect
+            key={d}
+            x={bandStart}
+            y={top}
+            width={bandwidth}
+            height={height}
+            fill="transparent"
+            pointerEvents="all"
+            style={{ cursor: 'pointer' }}
+            onClick={() => onSelectDate(d)}
+          />
+        );
+      })}
+    </g>
   );
 }
 
@@ -399,72 +648,340 @@ function useMeasuredWidth<T extends HTMLElement>(active: boolean) {
   return { ref, width };
 }
 
-export function SensationChart({ logs, onSelectDate }: Props) {
+export function SensationChart({ days, range, onSelectDate, onViewportStatsChange }: Props) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const chartHeight = isMobile ? 300 : 320;
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const [showPeriodBands, setShowPeriodBands] = useState(false);
-  const [showAnxietySeries, setShowAnxietySeries] = useState(false);
-  const [showSleepSeries, setShowSleepSeries] = useState(false);
+  const {
+    showPeriodBands,
+    showAnxietySeries,
+    showSleepSeries,
+    setShowPeriodBands,
+    setShowAnxietySeries,
+    setShowSleepSeries,
+  } = useHistoryChartDisplay();
+
+  /** Zoom volontairement en mémoire session uniquement (jamais localStorage). */
+  const [pxPerDayOverride, setPxPerDayOverride] = useState<number | null>(null);
+  const pendingScrollToStartRef = useRef(true);
+
+  useEffect(() => {
+    setPxPerDayOverride(null);
+  }, [range]);
+
+  useEffect(() => {
+    pendingScrollToStartRef.current = true;
+  }, [range, days.length]);
 
   const periodBands = useMemo(
-    () => logs.filter((l) => l.isPeriodDay).map((l) => ({ date: l.date, flow: l.periodFlow })),
-    [logs],
+    () =>
+      days
+        .filter((d) => d.filled && d.log?.isPeriodDay)
+        .map((d) => ({ date: d.date, flow: d.log!.periodFlow })),
+    [days],
   );
 
-  const { ref: measureRef, width: chartWidth } = useMeasuredWidth<HTMLDivElement>(logs.length > 0);
+  const unfilledDates = useMemo(() => days.filter((d) => !d.filled).map((d) => d.date), [days]);
 
-  if (logs.length === 0) {
-    return (
-      <Card variant="outlined">
-        <CardContent sx={{ p: 4, textAlign: 'center', '&:last-child': { pb: 4 } }}>
-          <Typography color="text.secondary">Aucune donnée sur cette période.</Typography>
-        </CardContent>
-      </Card>
+  const { ref: measureRef, width: chartWidth } = useMeasuredWidth<HTMLDivElement>(days.length > 0);
+
+  const fitPxPerDay = useMemo(() => {
+    if (days.length === 0 || chartWidth <= 0) return MAX_PX_PER_DAY;
+    return chartWidth / days.length;
+  }, [chartWidth, days.length]);
+
+  /** Minimum du curseur = toute la période visible d’un coup (origine à gauche). */
+  const sliderMinPxPerDay = Math.min(fitPxPerDay, MAX_PX_PER_DAY);
+  const defaultPxPerDay = sliderMinPxPerDay;
+  const zoomSliderActive =
+    days.length >= CHART_HELP_ZOOM_MIN_POINTS && sliderMinPxPerDay < MAX_PX_PER_DAY - 0.01;
+
+  const timelineScrollActive = days.length >= CHART_HELP_ZOOM_MIN_POINTS;
+  const pxPerDay = pxPerDayOverride ?? defaultPxPerDay;
+  const plotWidth = timelineScrollActive
+    ? Math.max(chartWidth, Math.ceil(days.length * pxPerDay))
+    : chartWidth;
+  const isHorizontallyScrollable = timelineScrollActive && plotWidth > chartWidth + 1;
+  const [scrollLeft, setScrollLeft] = useState(0);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const syncScroll = () => setScrollLeft(el.scrollLeft);
+    syncScroll();
+    el.addEventListener('scroll', syncScroll, { passive: true });
+    return () => el.removeEventListener('scroll', syncScroll);
+  }, [plotWidth, chartWidth, isHorizontallyScrollable]);
+
+  useEffect(() => {
+    if (!onViewportStatsChange) return;
+    if (days.length === 0 || chartWidth <= 0) {
+      onViewportStatsChange(null);
+      return;
+    }
+    const el = scrollRef.current;
+    const viewportWidth = el?.clientWidth ?? chartWidth;
+    const currentScrollLeft = el?.scrollLeft ?? scrollLeft;
+    if (
+      isFullTimelineVisible(currentScrollLeft, viewportWidth, plotWidth, isHorizontallyScrollable)
+    ) {
+      onViewportStatsChange(null);
+      return;
+    }
+    const { startIndex, endIndex } = computeVisibleDayIndices(
+      days.length,
+      currentScrollLeft,
+      viewportWidth,
+      pxPerDay,
     );
-  }
+    if (endIndex < startIndex) {
+      onViewportStatsChange(null);
+      return;
+    }
+    onViewportStatsChange(computeHistoryViewportStats(days, startIndex, endIndex));
+  }, [
+    chartWidth,
+    days,
+    isHorizontallyScrollable,
+    onViewportStatsChange,
+    plotWidth,
+    pxPerDay,
+    scrollLeft,
+  ]);
 
-  const dataset = logs.map((l) => ({
-    date: l.date,
-    sensation: l.sensation,
-    anxietyChartY: anxietyLevelToChartY(l.anxietyLevel ?? 0),
-    sleepChartY: sleepQualityToChartY(l.sleepQuality ?? 0),
-  }));
+  useEffect(() => {
+    onViewportStatsChange?.(null);
+  }, [days.length, onViewportStatsChange, range]);
 
-  const targetTicks = isMobile ? 5 : 8;
-  const tickStep = Math.max(1, Math.ceil(logs.length / targetTicks));
+  const chartWidthRef = useRef(chartWidth);
+  const daysLengthRef = useRef(days.length);
+  const pxPerDayRef = useRef(pxPerDay);
+  const sliderMinRef = useRef(sliderMinPxPerDay);
+  const zoomSliderActiveRef = useRef(zoomSliderActive);
+
+  useEffect(() => {
+    chartWidthRef.current = chartWidth;
+    daysLengthRef.current = days.length;
+    pxPerDayRef.current = pxPerDay;
+    sliderMinRef.current = sliderMinPxPerDay;
+    zoomSliderActiveRef.current = zoomSliderActive;
+  }, [chartWidth, days.length, pxPerDay, sliderMinPxPerDay, zoomSliderActive]);
+
+  const scrollToStartIfPending = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || !pendingScrollToStartRef.current) return;
+    el.scrollLeft = 0;
+    pendingScrollToStartRef.current = false;
+    setScrollLeft(0);
+  }, []);
+
+  useLayoutEffect(() => {
+    scrollToStartIfPending();
+    const el = scrollRef.current;
+    if (!el) return;
+    const inner = el.firstElementChild;
+    if (!inner || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => scrollToStartIfPending());
+    ro.observe(inner);
+    return () => ro.disconnect();
+  }, [days.length, range, plotWidth, scrollToStartIfPending]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !timelineScrollActive) return;
+
+    const computePlotWidth = (px: number) =>
+      Math.max(chartWidthRef.current, Math.ceil(daysLengthRef.current * px));
+
+    let mode: 'none' | 'pan' | 'pinch' = 'none';
+    let panStartX = 0;
+    let panStartY = 0;
+    let panStartScrollLeft = 0;
+    let pinchStartDistance = 0;
+    let pinchStartPxPerDay = 0;
+    let pinchContentX = 0;
+
+    const applyPinchZoom = (nextPxRaw: number, focalClientX: number) => {
+      if (!zoomSliderActiveRef.current) return;
+      const nextPx = clampPxPerDay(nextPxRaw, sliderMinRef.current);
+      const oldPlot = computePlotWidth(pinchStartPxPerDay);
+      const newPlot = computePlotWidth(nextPx);
+      const rect = el.getBoundingClientRect();
+      const focalOffset = focalClientX - rect.left;
+
+      setPxPerDayOverride(nextPx);
+      pxPerDayRef.current = nextPx;
+
+      if (oldPlot <= 0) return;
+      const maxScroll = Math.max(0, newPlot - el.clientWidth);
+      el.scrollLeft = Math.max(
+        0,
+        Math.min(maxScroll, pinchContentX * (newPlot / oldPlot) - focalOffset),
+      );
+    };
+
+    const onTouchStart = (event: TouchEvent) => {
+      if (event.touches.length === 2 && zoomSliderActiveRef.current) {
+        mode = 'pinch';
+        const t0 = event.touches[0];
+        const t1 = event.touches[1];
+        pinchStartDistance = touchDistance(t0, t1);
+        if (pinchStartDistance <= 0) return;
+        pinchStartPxPerDay = pxPerDayRef.current;
+        const focalClientX = (t0.clientX + t1.clientX) / 2;
+        const rect = el.getBoundingClientRect();
+        pinchContentX = el.scrollLeft + (focalClientX - rect.left);
+        return;
+      }
+      if (event.touches.length === 1) {
+        mode = 'pan';
+        panStartX = event.touches[0].clientX;
+        panStartY = event.touches[0].clientY;
+        panStartScrollLeft = el.scrollLeft;
+      }
+    };
+
+    const onTouchMove = (event: TouchEvent) => {
+      if (mode === 'pinch' && event.touches.length === 2 && zoomSliderActiveRef.current) {
+        const t0 = event.touches[0];
+        const t1 = event.touches[1];
+        if (pinchStartDistance <= 0) return;
+        const scale = touchDistance(t0, t1) / pinchStartDistance;
+        const focalClientX = (t0.clientX + t1.clientX) / 2;
+        applyPinchZoom(pinchStartPxPerDay * scale, focalClientX);
+        event.preventDefault();
+        return;
+      }
+      if (mode === 'pan' && event.touches.length === 1) {
+        const dx = panStartX - event.touches[0].clientX;
+        const dy = panStartY - event.touches[0].clientY;
+        if (Math.abs(dx) <= Math.abs(dy)) return;
+        el.scrollLeft = panStartScrollLeft + dx;
+        event.preventDefault();
+      }
+    };
+
+    const onTouchEnd = (event: TouchEvent) => {
+      if (event.touches.length === 0) {
+        mode = 'none';
+        return;
+      }
+      if (event.touches.length === 1 && mode === 'pinch') {
+        mode = 'pan';
+        panStartX = event.touches[0].clientX;
+        panStartY = event.touches[0].clientY;
+        panStartScrollLeft = el.scrollLeft;
+      }
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    el.addEventListener('touchcancel', onTouchEnd, { passive: true });
+
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener('touchcancel', onTouchEnd);
+    };
+  }, [timelineScrollActive]);
+
+  const preserveScrollRatio = useCallback(
+    (apply: () => void) => {
+      const el = scrollRef.current;
+      if (!el || !isHorizontallyScrollable) {
+        apply();
+        return;
+      }
+      const maxScroll = el.scrollWidth - el.clientWidth;
+      const ratio = maxScroll > 0 ? el.scrollLeft / maxScroll : 1;
+      apply();
+      requestAnimationFrame(() => {
+        const next = scrollRef.current;
+        if (!next) return;
+        const nextMax = next.scrollWidth - next.clientWidth;
+        next.scrollLeft = ratio * nextMax;
+      });
+    },
+    [isHorizontallyScrollable],
+  );
+
+  const setPxPerDay = useCallback(
+    (next: number | ((prev: number) => number)) => {
+      preserveScrollRatio(() => {
+        setPxPerDayOverride((prev) => {
+          const current = prev ?? defaultPxPerDay;
+          const resolved = typeof next === 'function' ? next(current) : next;
+          return clampPxPerDay(resolved, sliderMinPxPerDay);
+        });
+      });
+    },
+    [defaultPxPerDay, preserveScrollRatio, sliderMinPxPerDay],
+  );
+
+  const approxDaysInViewport = chartWidth > 0 && pxPerDay > 0 ? chartWidth / pxPerDay : days.length;
+
+  const overviewSmoothConfig = getOverviewSmoothConfig(
+    range,
+    pxPerDay,
+    sliderMinPxPerDay,
+    days.length,
+  );
+  const lineCurve =
+    overviewSmoothConfig !== null && overviewSmoothConfig.window >= 7
+      ? ('natural' as const)
+      : ('monotoneX' as const);
+
+  const dataset = useMemo(() => {
+    const sensationRaw = days.map((d) => (d.filled && d.log ? d.log.sensation : null));
+    const anxietyRaw = days.map((d) =>
+      d.filled && d.log ? anxietyLevelToChartY(d.log.anxietyLevel ?? 0) : null,
+    );
+    const sleepRaw = days.map((d) =>
+      d.filled && d.log ? sleepQualityToChartY(d.log.sleepQuality ?? 0) : null,
+    );
+
+    const smooth = (values: (number | null)[]) =>
+      overviewSmoothConfig ? applyOverviewSmooth(values, overviewSmoothConfig) : values;
+
+    const sensation = smooth(sensationRaw);
+    const anxietyChartY = smooth(anxietyRaw);
+    const sleepChartY = smooth(sleepRaw);
+
+    return days.map((d, index) => ({
+      date: d.date,
+      sensation: sensation[index],
+      anxietyChartY: anxietyChartY[index],
+      sleepChartY: sleepChartY[index],
+    }));
+  }, [days, overviewSmoothConfig]);
+
+  const targetTicksInViewport = isMobile ? 7 : 10;
+  const minPxBetweenTicks = isMobile ? 38 : 46;
+  const tickStepFromViewport = Math.max(
+    1,
+    Math.floor(approxDaysInViewport / targetTicksInViewport),
+  );
+  const tickStepFromSpacing = Math.max(1, Math.ceil(minPxBetweenTicks / pxPerDay));
+  const tickStep = Math.max(1, Math.min(tickStepFromViewport, tickStepFromSpacing));
+  const tickShowMonth = approxDaysInViewport <= 45 || pxPerDay > defaultPxPerDay + 0.5;
   const tickInterval =
-    logs.length <= 7
+    days.length <= 7
       ? ('auto' as const)
       : (_value: unknown, index: number) => index % tickStep === 0;
-
-  const timelineZoomActive = logs.length >= CHART_HELP_ZOOM_MIN_POINTS;
 
   const xAxisConfig = useMemo(
     () => ({
       scaleType: 'band' as const,
       dataKey: 'date' as const,
       tickLabelStyle: { fontSize: isMobile ? 11 : 12 },
-      valueFormatter: (v: string) => formatTick(v, isMobile),
+      valueFormatter: (v: string) => formatTick(v, isMobile, tickShowMonth),
       tickInterval,
-      ...(timelineZoomActive
-        ? {
-            zoom: {
-              filterMode: 'keep' as const,
-              panning: true,
-              minSpan: 10,
-              step: 2,
-              slider: {
-                enabled: true,
-                preview: false,
-                showTooltip: 'hover' as const,
-              },
-            },
-          }
-        : {}),
     }),
-    [isMobile, tickInterval, timelineZoomActive],
+    [isMobile, tickInterval, tickShowMonth],
   );
 
   /**
@@ -477,21 +994,21 @@ export function SensationChart({ logs, onSelectDate }: Props) {
     ? { left: 4, right: 4, top: 12, bottom: 36 }
     : { left: 12, right: 12, top: 16, bottom: 32 };
 
-  const handleSeriesItemClick = (
-    _event: React.MouseEvent<SVGElement>,
-    item: LineItemIdentifier,
-  ) => {
-    if (item.dataIndex === undefined) return;
-    const row = logs[item.dataIndex];
-    if (row) onSelectDate?.(row.date);
-  };
+  const handleSeriesItemClick = useCallback(
+    (_event: React.MouseEvent<SVGElement>, item: LineItemIdentifier) => {
+      if (item.dataIndex === undefined) return;
+      const day = days[item.dataIndex];
+      if (day) onSelectDate?.(day.date);
+    },
+    [days, onSelectDate],
+  );
 
   const chartTooltipSlot = useMemo(() => {
     function ChartTooltipSlot(props: ComponentProps<typeof ChartsTooltipContainer>) {
       return (
         <ChartsTooltipContainer {...props}>
           <SensationAxisTooltipContent
-            logs={logs}
+            days={days}
             showPeriodDetails={showPeriodBands}
             showAnxiety={showAnxietySeries}
             showSleep={showSleepSeries}
@@ -500,15 +1017,125 @@ export function SensationChart({ logs, onSelectDate }: Props) {
       );
     }
     return ChartTooltipSlot;
-  }, [logs, showPeriodBands, showAnxietySeries, showSleepSeries]);
-
-  const showMarks = !isMobile || logs.length <= 14;
+  }, [days, showPeriodBands, showAnxietySeries, showSleepSeries]);
 
   const legendSeriesSwatchSx = {
     width: 24,
     height: 6,
     borderRadius: 1,
   } as const;
+
+  if (days.length === 0) {
+    return (
+      <Card variant="outlined">
+        <CardContent sx={{ p: 4, textAlign: 'center', '&:last-child': { pb: 4 } }}>
+          <Typography color="text.secondary">Aucune donnée sur cette période.</Typography>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const lineChart = chartWidth > 0 && (
+    <LineInteractionContext.Provider value={{ days, onSelectDate }}>
+      <LineChart
+        hideLegend
+        dataset={dataset}
+        width={plotWidth}
+        height={chartHeight}
+        margin={chartMargin}
+        onMarkClick={handleSeriesItemClick}
+        xAxis={[xAxisConfig]}
+        yAxis={[
+          {
+            min: -10,
+            max: 10,
+            domainLimit: 'strict',
+            width: yAxisReservedWidth,
+            tickLabelStyle: {
+              fontSize: isMobile ? 11 : 12,
+              textAnchor: 'end',
+            },
+          },
+        ]}
+        slots={{ tooltip: chartTooltipSlot, line: WideHitAnimatedLine }}
+        series={[
+          {
+            dataKey: 'sensation',
+            label: '',
+            showMark: false,
+            color: SENSATION_CHART_COLOR,
+            connectNulls: false,
+            curve: lineCurve,
+          },
+          ...(showAnxietySeries
+            ? [
+                {
+                  dataKey: 'anxietyChartY' as const,
+                  label: '',
+                  showMark: false,
+                  color: ANXIETY_CHART_COLOR,
+                  connectNulls: false,
+                  curve: lineCurve,
+                },
+              ]
+            : []),
+          ...(showSleepSeries
+            ? [
+                {
+                  dataKey: 'sleepChartY' as const,
+                  label: '',
+                  showMark: false,
+                  color: SLEEP_CHART_COLOR,
+                  connectNulls: false,
+                  curve: lineCurve,
+                },
+              ]
+            : []),
+        ]}
+        slotProps={{
+          tooltip: {
+            sx: {
+              /** Popper : pas pleine largeur écran, marges latérales ~16px via calc */
+              maxWidth: 'min(320px, calc(100vw - 32px))',
+              [`& .${chartsTooltipClasses.paper}`]: {
+                maxWidth: '100%',
+                boxSizing: 'border-box',
+              },
+              [`& .${chartsTooltipClasses.table}`]: { display: 'block' },
+              [`& .${chartsTooltipClasses.row}`]: { display: 'block' },
+              [`& .${chartsTooltipClasses.labelCell}`]: { display: 'none' },
+              [`& .${chartsTooltipClasses.valueCell}`]: {
+                display: 'block',
+                whiteSpace: 'pre-line',
+                lineHeight: 1.45,
+                overflowWrap: 'break-word',
+              },
+            },
+          },
+        }}
+        sx={{
+          display: 'block',
+          mx: 'auto',
+          maxWidth: 'none',
+          touchAction: isHorizontallyScrollable ? 'none' : 'auto',
+          '& svg': {
+            touchAction: isHorizontallyScrollable ? 'none' : 'auto',
+          },
+        }}
+      >
+        {showPeriodBands ? <PeriodDayBandHighlights bands={periodBands} /> : null}
+        <ChartsReferenceLine
+          y={0}
+          lineStyle={{
+            stroke: theme.palette.text.secondary,
+            strokeDasharray: '4 4',
+            opacity: 0.6,
+          }}
+        />
+        <DayColumnHitTargets dates={unfilledDates} onSelectDate={onSelectDate} />
+      </LineChart>
+    </LineInteractionContext.Provider>
+  );
 
   return (
     <Card
@@ -537,7 +1164,7 @@ export function SensationChart({ logs, onSelectDate }: Props) {
             }}
           >
             <Stack direction="row" alignItems="center" spacing={1}>
-              <Box sx={{ ...legendSeriesSwatchSx, bgcolor: 'primary.main' }} />
+              <Box sx={{ ...legendSeriesSwatchSx, bgcolor: SENSATION_CHART_COLOR }} />
               <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
                 Ressenti
               </Typography>
@@ -562,7 +1189,7 @@ export function SensationChart({ logs, onSelectDate }: Props) {
             ) : null}
             {showAnxietySeries ? (
               <Stack direction="row" alignItems="center" spacing={1}>
-                <Box sx={{ ...legendSeriesSwatchSx, bgcolor: 'warning.main' }} />
+                <Box sx={{ ...legendSeriesSwatchSx, bgcolor: ANXIETY_CHART_COLOR }} />
                 <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
                   Anxiété
                 </Typography>
@@ -589,7 +1216,7 @@ export function SensationChart({ logs, onSelectDate }: Props) {
                 <Switch
                   size="small"
                   checked={showPeriodBands}
-                  onChange={(_, c) => setShowPeriodBands(c)}
+                  onChange={(_, checked) => setShowPeriodBands(checked)}
                   inputProps={{ 'aria-label': 'Afficher les jours de règles sur le graphe' }}
                 />
               }
@@ -605,7 +1232,7 @@ export function SensationChart({ logs, onSelectDate }: Props) {
                 <Switch
                   size="small"
                   checked={showAnxietySeries}
-                  onChange={(_, c) => setShowAnxietySeries(c)}
+                  onChange={(_, checked) => setShowAnxietySeries(checked)}
                   inputProps={{ 'aria-label': 'Afficher la courbe d’anxiété' }}
                 />
               }
@@ -621,7 +1248,7 @@ export function SensationChart({ logs, onSelectDate }: Props) {
                 <Switch
                   size="small"
                   checked={showSleepSeries}
-                  onChange={(_, c) => setShowSleepSeries(c)}
+                  onChange={(_, checked) => setShowSleepSeries(checked)}
                   inputProps={{ 'aria-label': 'Afficher la courbe de sommeil' }}
                 />
               }
@@ -635,15 +1262,44 @@ export function SensationChart({ logs, onSelectDate }: Props) {
           </Stack>
         </Stack>
 
-        {timelineZoomActive ? (
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ px: 1, textAlign: 'center', display: 'block', lineHeight: 1.35 }}
+        {zoomSliderActive ? (
+          <Stack
+            direction="row"
+            alignItems="center"
+            spacing={{ xs: 0.5, sm: 1 }}
+            sx={{ px: 1, pb: 0.5 }}
           >
-            Pince pour zoomer, glisse pour parcourir la période. Le curseur sous le graphe permet
-            aussi de te déplacer dans le temps.
-          </Typography>
+            <IconButton
+              size="small"
+              aria-label="Moins de détail sur le graphe"
+              disabled={pxPerDay <= sliderMinPxPerDay + 0.01}
+              onClick={() => setPxPerDay((value) => value - PX_PER_DAY_STEP)}
+            >
+              <ZoomOutIcon fontSize="small" />
+            </IconButton>
+            <Stack spacing={0.25} sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2 }}>
+                Détail
+              </Typography>
+              <Slider
+                size="small"
+                value={pxPerDay}
+                min={sliderMinPxPerDay}
+                max={MAX_PX_PER_DAY}
+                step={SLIDER_STEP}
+                aria-label="Niveau de détail du graphe"
+                onChange={(_, value) => setPxPerDay(Array.isArray(value) ? value[0] : value)}
+              />
+            </Stack>
+            <IconButton
+              size="small"
+              aria-label="Plus de détail sur le graphe"
+              disabled={pxPerDay >= MAX_PX_PER_DAY}
+              onClick={() => setPxPerDay((value) => value + PX_PER_DAY_STEP)}
+            >
+              <ZoomInIcon fontSize="small" />
+            </IconButton>
+          </Stack>
         ) : null}
 
         <Box
@@ -651,105 +1307,37 @@ export function SensationChart({ logs, onSelectDate }: Props) {
           sx={{
             width: '100%',
             maxWidth: '100%',
-            display: 'flex',
-            justifyContent: 'center',
             lineHeight: 0,
           }}
         >
-          {chartWidth > 0 ? (
-            <LineInteractionContext.Provider value={{ logs, onSelectDate }}>
-              <LineChart
-                hideLegend
-                dataset={dataset}
-                width={chartWidth}
-                height={chartHeight}
-                margin={chartMargin}
-                onMarkClick={handleSeriesItemClick}
-                xAxis={[xAxisConfig]}
-                yAxis={[
-                  {
-                    min: -10,
-                    max: 10,
-                    domainLimit: 'strict',
-                    width: yAxisReservedWidth,
-                    tickLabelStyle: {
-                      fontSize: isMobile ? 11 : 12,
-                      textAnchor: 'end',
-                    },
-                  },
-                ]}
-                slots={{ tooltip: chartTooltipSlot, line: WideHitAnimatedLine }}
-                series={[
-                  {
-                    dataKey: 'sensation',
-                    label: '',
-                    showMark: showMarks,
-                    color: theme.palette.primary.main,
-                  },
-                  ...(showAnxietySeries
-                    ? [
-                        {
-                          dataKey: 'anxietyChartY' as const,
-                          label: '',
-                          showMark: showMarks,
-                          color: theme.palette.warning.main,
-                        },
-                      ]
-                    : []),
-                  ...(showSleepSeries
-                    ? [
-                        {
-                          dataKey: 'sleepChartY' as const,
-                          label: '',
-                          showMark: showMarks,
-                          color: SLEEP_CHART_COLOR,
-                        },
-                      ]
-                    : []),
-                ]}
-                slotProps={{
-                  tooltip: {
-                    sx: {
-                      /** Popper : pas pleine largeur écran, marges latérales ~16px via calc */
-                      maxWidth: 'min(320px, calc(100vw - 32px))',
-                      [`& .${chartsTooltipClasses.paper}`]: {
-                        maxWidth: '100%',
-                        boxSizing: 'border-box',
-                      },
-                      [`& .${chartsTooltipClasses.table}`]: { display: 'block' },
-                      [`& .${chartsTooltipClasses.row}`]: { display: 'block' },
-                      [`& .${chartsTooltipClasses.labelCell}`]: { display: 'none' },
-                      [`& .${chartsTooltipClasses.valueCell}`]: {
-                        display: 'block',
-                        whiteSpace: 'pre-line',
-                        lineHeight: 1.45,
-                        overflowWrap: 'break-word',
-                      },
-                    },
-                  },
-                }}
-                sx={{
-                  display: 'block',
-                  mx: 'auto',
-                  maxWidth: '100%',
-                  /** Défaut MUI : `pan-y` sur le svg ; sur tactile le pinch / pan du zoom est plus fiable avec `none`. */
-                  ...(timelineZoomActive ? { touchAction: 'none' as const } : {}),
-                }}
-              >
-                {showPeriodBands ? <PeriodDayBandHighlights bands={periodBands} /> : null}
-                <ChartsReferenceLine
-                  y={0}
-                  lineStyle={{
-                    stroke: theme.palette.text.secondary,
-                    strokeDasharray: '4 4',
-                    opacity: 0.6,
-                  }}
-                />
-              </LineChart>
-            </LineInteractionContext.Provider>
-          ) : (
-            <Box sx={{ height: chartHeight }} />
-          )}
+          <Box
+            ref={scrollRef}
+            sx={{
+              width: '100%',
+              overflowX: isHorizontallyScrollable ? 'auto' : 'hidden',
+              overflowY: 'hidden',
+              WebkitOverflowScrolling: 'touch',
+              overscrollBehaviorX: 'contain',
+              touchAction: timelineScrollActive ? 'none' : 'auto',
+              ...(isHorizontallyScrollable
+                ? {
+                    mx: -1,
+                    px: 1,
+                    scrollPaddingInline: 8,
+                  }
+                : {}),
+            }}
+          >
+            <Box
+              sx={{
+                width: plotWidth,
+                minWidth: '100%',
+                lineHeight: 0,
+              }}
+            >
+              {lineChart ?? <Box sx={{ height: chartHeight }} />}
+            </Box>
+          </Box>
         </Box>
       </Stack>
     </Card>

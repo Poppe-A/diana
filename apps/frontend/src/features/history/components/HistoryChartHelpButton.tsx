@@ -17,7 +17,7 @@ export function HistoryChartHelpButton({ zoomActive }: Props) {
             Lecture du graphe
           </Typography>
           <Typography variant="body2" component="div" sx={{ mb: 1 }}>
-            La courbe bleue indique ton ressenti du jour (−10 à +10). Survole ou pose le doigt sur
+            La courbe verte indique ton ressenti du jour (−10 à +10). Survole ou pose le doigt sur
             un jour pour voir le détail ; un clic ouvre la saisie pour cette date.
           </Typography>
           <Typography variant="body2" component="div" sx={{ mb: 1 }}>
@@ -31,8 +31,9 @@ export function HistoryChartHelpButton({ zoomActive }: Props) {
           </Typography>
           {zoomActive ? (
             <Typography variant="body2" component="div">
-              Sur une longue période tu peux zoomer (pincement à deux doigts), faire défiler
-              horizontalement ou utiliser le curseur sous le graphe.
+              Au chargement, toute la période est visible depuis le début (à gauche). Pince à deux
+              doigts sur le graphe pour zoomer (le curseur « Détail » suit) ; une fois zoomé, fais
+              glisser horizontalement pour parcourir le temps.
             </Typography>
           ) : null}
         </Box>

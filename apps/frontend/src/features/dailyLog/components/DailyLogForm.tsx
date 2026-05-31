@@ -162,10 +162,6 @@ export function DailyLogForm({ date, initial, onSaved }: Props) {
         <Stack spacing={3}>
           <Stack spacing={0.5}>
             <Typography variant="h6">Ressenti global</Typography>
-            <Typography variant="body2" color="text.secondary">
-              Échelle de {SENSATION_MIN} (douleur / mal-être) à {SENSATION_MAX} (bien-être). 0 =
-              neutre.
-            </Typography>
           </Stack>
 
           <Box>
@@ -191,15 +187,10 @@ export function DailyLogForm({ date, initial, onSaved }: Props) {
 
           <Box>
             <Typography variant="h6">Sommeil</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              Échelle de {SLEEP_QUALITY_MIN} (très mauvais) à {SLEEP_QUALITY_MAX} (excellent).
-            </Typography>
             <Controller
               name="sleepQuality"
               control={control}
-              render={({ field }) => (
-                <SleepSlider value={field.value} onChange={field.onChange} />
-              )}
+              render={({ field }) => <SleepSlider value={field.value} onChange={field.onChange} />}
             />
           </Box>
 
@@ -287,7 +278,9 @@ export function DailyLogForm({ date, initial, onSaved }: Props) {
         aria-labelledby="daily-log-overwrite-title"
         aria-describedby="daily-log-overwrite-description"
       >
-        <DialogTitle id="daily-log-overwrite-title">Écraser les données existantes&nbsp;?</DialogTitle>
+        <DialogTitle id="daily-log-overwrite-title">
+          Écraser les données existantes&nbsp;?
+        </DialogTitle>
         <DialogContent>
           <DialogContentText id="daily-log-overwrite-description">
             Ce jour a déjà été renseigné. En confirmant, les données précédentes seront remplacées

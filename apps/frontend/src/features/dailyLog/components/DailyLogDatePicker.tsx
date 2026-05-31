@@ -23,24 +23,30 @@ export function DailyLogDatePicker({
   onGoToToday,
 }: Props) {
   return (
-    <Stack direction="row" spacing={0.5} alignItems="center">
+    <Stack direction="row" spacing={0.5} alignItems="center" sx={{ width: '100%' }}>
       <Tooltip title="Jour précédent">
-        <IconButton size="small" onClick={() => onShiftDay(-1)} aria-label="Jour précédent">
+        <IconButton onClick={() => onShiftDay(-1)} aria-label="Jour précédent">
           <ChevronLeftIcon />
         </IconButton>
       </Tooltip>
       <TextField
         type="date"
-        size="small"
+        size="medium"
         value={selectedDate}
         onChange={(e) => onSelectDate(e.target.value)}
         inputProps={{ max: today, 'aria-label': 'Choisir une date' }}
-        sx={{ width: { xs: 150, sm: 170 } }}
+        sx={{
+          flex: 1,
+          minWidth: 0,
+          '& input': {
+            fontSize: { xs: '1rem', sm: '1.05rem' },
+            py: { xs: 1.35, sm: 1.5 },
+          },
+        }}
       />
       <Tooltip title="Jour suivant">
         <span>
           <IconButton
-            size="small"
             onClick={() => onShiftDay(1)}
             disabled={isToday || isFuture}
             aria-label="Jour suivant"
@@ -51,11 +57,9 @@ export function DailyLogDatePicker({
       </Tooltip>
       {!isToday && (
         <Tooltip title="Aujourd’hui">
-          <span style={{ marginLeft: 'auto' }}>
-            <IconButton size="large" onClick={onGoToToday} aria-label="Aujourd’hui">
-              <TodayIcon />
-            </IconButton>
-          </span>
+          <IconButton onClick={onGoToToday} aria-label="Aujourd’hui">
+            <TodayIcon />
+          </IconButton>
         </Tooltip>
       )}
     </Stack>

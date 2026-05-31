@@ -36,6 +36,13 @@ export type DailyLogView = {
   sleepQuality: number;
 };
 
+/** Entrée calendaire renvoyée par GET /daily-logs (plage dense, un jour = une ligne). */
+export type DailyLogHistoryDay = {
+  date: string;
+  filled: boolean;
+  log: DailyLogView | null;
+};
+
 export const SENSATION_MIN = -10;
 export const SENSATION_MAX = 10;
 

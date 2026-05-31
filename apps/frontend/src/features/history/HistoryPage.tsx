@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { HistoryViewportStats } from './utils/historyViewportStats';
 import { Alert, Skeleton, Stack, Typography } from '@mui/material';
 import { AppLayout } from '../../components/layout/AppLayout';
 import { RangeSelector } from './components/RangeSelector';
@@ -6,7 +7,7 @@ import { HistorySummary } from './components/HistorySummary';
 import { HistoryLogEditDialog } from './components/HistoryLogEditDialog';
 import { SensationChart } from './components/SensationChart';
 import { PeriodDaysList } from './components/PeriodDaysList';
-import { useHistoryLogs, type RangeKey } from './hooks/useHistoryLogs';
+import { rangeToDates, useHistoryLogs, type RangeKey } from './hooks/useHistoryLogs';
 import {
   CHART_HELP_ZOOM_MIN_POINTS,
   HistoryChartHelpButton,
@@ -14,15 +15,27 @@ import {
 
 export function HistoryPage() {
   const [range, setRange] = useState<RangeKey>('30d');
-  const { logs, loading, error, periodDates, average, reload } = useHistoryLogs(range);
+  const { days, filledCount, initialLoading, error, periodDates, average, reload } =
+    useHistoryLogs(range);
   const [editDate, setEditDate] = useState<string | null>(null);
+  const [viewportStats, setViewportStats] = useState<HistoryViewportStats | null>(null);
 
-  const initialForEdit = useMemo(
-    () => (editDate ? logs.find((l) => l.date === editDate) : undefined),
-    [editDate, logs],
+  const handleViewportStatsChange = useCallback((stats: HistoryViewportStats | null) => {
+    setViewportStats(stats);
+  }, []);
+
+  useEffect(() => {
+    setViewportStats(null);
+  }, [range]);
+
+  const { from: rangeMinDate, to: rangeMaxDate } = useMemo(() => rangeToDates(range), [range]);
+
+  const selectedDay = useMemo(
+    () => (editDate ? days.find((d) => d.date === editDate) : undefined),
+    [editDate, days],
   );
 
-  const chartZoomHelpActive = logs.length >= CHART_HELP_ZOOM_MIN_POINTS;
+  const chartZoomHelpActive = days.length >= CHART_HELP_ZOOM_MIN_POINTS;
 
   return (
     <AppLayout
@@ -32,18 +45,30 @@ export function HistoryPage() {
       action={<HistoryChartHelpButton zoomActive={chartZoomHelpActive} />}
     >
       <Stack spacing={3}>
-        <RangeSelector value={range} onChange={setRange} />
+        <HistorySummary
+          count={viewportStats?.count ?? filledCount}
+          average={viewportStats?.average ?? average}
+          periodDays={viewportStats?.periodDays ?? periodDates.length}
+          viewportLabel={
+            viewportStats
+              ? { dateFrom: viewportStats.dateFrom, dateTo: viewportStats.dateTo }
+              : undefined
+          }
+        />
 
-        <HistorySummary count={logs.length} average={average} periodDays={periodDates.length} />
+        <RangeSelector value={range} onChange={setRange} />
 
         {error && <Alert severity="error">{error}</Alert>}
 
-        {loading ? (
+        {initialLoading ? (
           <Skeleton variant="rounded" height={280} />
         ) : (
-          <>
-            <SensationChart logs={logs} onSelectDate={setEditDate} />
-          </>
+          <SensationChart
+            days={days}
+            range={range}
+            onSelectDate={setEditDate}
+            onViewportStatsChange={handleViewportStatsChange}
+          />
         )}
 
         <PeriodDaysList dates={periodDates} onDateClick={setEditDate} />
@@ -51,7 +76,11 @@ export function HistoryPage() {
         <HistoryLogEditDialog
           open={editDate !== null}
           date={editDate}
-          initialLog={initialForEdit}
+          minDate={rangeMinDate}
+          maxDate={rangeMaxDate}
+          filled={selectedDay?.filled ?? false}
+          initialLog={selectedDay?.log ?? null}
+          onDateChange={setEditDate}
           onClose={() => setEditDate(null)}
           onSaved={() => void reload()}
         />

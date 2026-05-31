@@ -21,6 +21,25 @@ export type DailyLogView = {
   sleepQuality: number;
 };
 
+/** Une entrée par jour calendaire ; `log` est null si non renseigné. */
+export type DailyLogHistoryDay = {
+  date: string;
+  filled: boolean;
+  log: DailyLogView | null;
+};
+
+function listDatesInclusive(from: string, to: string): string[] {
+  const dates: string[] = [];
+  let current = from;
+  while (current <= to) {
+    dates.push(current);
+    const next = new Date(`${current}T12:00:00.000Z`);
+    next.setUTCDate(next.getUTCDate() + 1);
+    current = next.toISOString().slice(0, 10);
+  }
+  return dates;
+}
+
 @Injectable()
 export class DailyLogService {
   constructor(
@@ -88,7 +107,7 @@ export class DailyLogService {
     };
   }
 
-  async findRange(userId: number, from: string, to: string): Promise<DailyLogView[]> {
+  async findRange(userId: number, from: string, to: string): Promise<DailyLogHistoryDay[]> {
     if (from > to) {
       throw new BadRequestException('from must be before or equal to to');
     }
@@ -96,7 +115,15 @@ export class DailyLogService {
       where: { userId, date: Between(from, to) },
       order: { date: 'ASC' },
     });
-    return rows.map((r) => this.toView(r));
+    const logByDate = new Map(rows.map((row) => [this.formatDate(row.date as unknown as string), row]));
+
+    return listDatesInclusive(from, to).map((date) => {
+      const row = logByDate.get(date);
+      if (!row) {
+        return { date, filled: false, log: null };
+      }
+      return { date, filled: true, log: this.toView(row) };
+    });
   }
 
   async findByDate(userId: number, date: string): Promise<DailyLogView | null> {

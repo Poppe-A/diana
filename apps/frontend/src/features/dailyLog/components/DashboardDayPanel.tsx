@@ -1,5 +1,5 @@
 import { DailyLogForm } from './DailyLogForm';
-import { PhysicalPainCard } from '../../physicalPain/components/PhysicalPainCard';
+import { JournalPainTabs } from '../../../components/JournalPainTabs';
 import type { DailyLogView } from '../types';
 
 type Props = {
@@ -10,9 +10,11 @@ type Props = {
 
 export function DashboardDayPanel({ date, log, onLogSaved }: Props) {
   return (
-    <>
-      <DailyLogForm key={date} date={date} initial={log} onSaved={onLogSaved} />
-      <PhysicalPainCard date={date} />
-    </>
+    <JournalPainTabs
+      date={date}
+      journal={
+        <DailyLogForm key={date} date={date} initial={log} onSaved={onLogSaved} />
+      }
+    />
   );
 }
