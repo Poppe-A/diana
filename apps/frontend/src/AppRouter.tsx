@@ -9,6 +9,7 @@ import { LoginPage } from './features/auth/LoginPage';
 import { RegisterPage } from './features/auth/RegisterPage';
 import { DashboardPage } from './features/dailyLog/DashboardPage';
 import { HistoryPage } from './features/history/HistoryPage';
+import { EventsPage } from './features/events/EventsPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 function AuthBootstrap() {
@@ -33,6 +34,7 @@ function AppRoutes() {
         <Route element={<ProtectedRoute />}>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/history" element={<HistoryPage />} />
+          <Route path="/events" element={<EventsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

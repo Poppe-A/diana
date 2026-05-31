@@ -13,6 +13,7 @@ import { CryptoModule } from './crypto/crypto.module';
 import { DailyLogModule } from './daily-log/daily-log.module';
 import { BodyZoneModule } from './body-zone/body-zone.module';
 import { PhysicalPainModule } from './physical-pain/physical-pain.module';
+import { UserEventModule } from './user-event/user-event.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { PhysicalPainModule } from './physical-pain/physical-pain.module';
     DailyLogModule,
     BodyZoneModule,
     PhysicalPainModule,
+    UserEventModule,
   ],
   controllers: [AppController],
   providers: [

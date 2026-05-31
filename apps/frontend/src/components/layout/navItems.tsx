@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import EventNoteIcon from '@mui/icons-material/EventNote';
 import TodayIcon from '@mui/icons-material/Today';
 import TimelineIcon from '@mui/icons-material/Timeline';
 
@@ -13,6 +14,7 @@ export function useNavItems(): NavItem[] {
     () => [
       { to: '/', label: 'Aujourd’hui', icon: <TodayIcon /> },
       { to: '/history', label: 'Historique', icon: <TimelineIcon /> },
+      { to: '/events', label: 'Événements', icon: <EventNoteIcon /> },
     ],
     [],
   );

@@ -19,9 +19,13 @@ export function useHistoryChartDisplay() {
   }, []);
 
   return {
+    showSensationSeries: prefs.showSensationSeries,
+    showEventBands: prefs.showEventBands,
     showPeriodBands: prefs.showPeriodBands,
     showAnxietySeries: prefs.showAnxietySeries,
     showSleepSeries: prefs.showSleepSeries,
+    setShowSensationSeries: (value: boolean) => setPref('showSensationSeries', value),
+    setShowEventBands: (value: boolean) => setPref('showEventBands', value),
     setShowPeriodBands: (value: boolean) => setPref('showPeriodBands', value),
     setShowAnxietySeries: (value: boolean) => setPref('showAnxietySeries', value),
     setShowSleepSeries: (value: boolean) => setPref('showSleepSeries', value),

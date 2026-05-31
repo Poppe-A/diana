@@ -1,4 +1,6 @@
 export type HistoryChartDisplayPrefs = {
+  showSensationSeries: boolean;
+  showEventBands: boolean;
   showPeriodBands: boolean;
   showAnxietySeries: boolean;
   showSleepSeries: boolean;
@@ -7,6 +9,8 @@ export type HistoryChartDisplayPrefs = {
 const STORAGE_KEY = 'diana:historyChart:display';
 
 const DEFAULT_PREFS: HistoryChartDisplayPrefs = {
+  showSensationSeries: true,
+  showEventBands: true,
   showPeriodBands: false,
   showAnxietySeries: false,
   showSleepSeries: false,
@@ -18,6 +22,14 @@ export function readHistoryChartDisplayPrefs(): HistoryChartDisplayPrefs {
     if (!raw) return { ...DEFAULT_PREFS };
     const parsed = JSON.parse(raw) as Partial<HistoryChartDisplayPrefs>;
     return {
+      showSensationSeries:
+        parsed.showSensationSeries !== undefined
+          ? Boolean(parsed.showSensationSeries)
+          : DEFAULT_PREFS.showSensationSeries,
+      showEventBands:
+        parsed.showEventBands !== undefined
+          ? Boolean(parsed.showEventBands)
+          : DEFAULT_PREFS.showEventBands,
       showPeriodBands: Boolean(parsed.showPeriodBands),
       showAnxietySeries: Boolean(parsed.showAnxietySeries),
       showSleepSeries: Boolean(parsed.showSleepSeries),

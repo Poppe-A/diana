@@ -49,6 +49,11 @@ import {
   type DailyLogHistoryDay,
   type PeriodFlowLevel,
 } from '../../dailyLog/types';
+import { EVENT_COLOR_OPTIONS, eventBandFill, eventColorHex } from '../../events/eventColors';
+import type { UserEventView } from '../../events/types';
+import { assignEventLanes } from '../../events/utils/assignEventLanes';
+import { clipEventToTimeline } from '../../events/utils/clipEventToTimeline';
+import { eventsOnDay } from '../../events/utils/eventsOnDay';
 import { useHistoryChartDisplay } from '../hooks/useHistoryChartDisplay';
 import type { RangeKey } from '../hooks/useHistoryLogs';
 import {
@@ -59,9 +64,14 @@ import {
 } from '../utils/historyViewportStats';
 import { CHART_HELP_ZOOM_MIN_POINTS } from './HistoryChartHelpButton';
 
+/** Hauteur max de la zone événements en haut du tracé (part du plot). */
+const EVENT_BAND_MAX_HEIGHT_RATIO = 0.07;
+const EVENT_LANE_MIN_HEIGHT_PX = 2;
+
 type Props = {
   days: DailyLogHistoryDay[];
   range: RangeKey;
+  events?: UserEventView[];
   onSelectDate?: (date: string) => void;
   /** Stats recalculées pour les jours visibles (zoom + défilement). `null` = toute la période. */
   onViewportStatsChange?: (stats: HistoryViewportStats | null) => void;
@@ -414,22 +424,47 @@ function scale0To10Color(value: number, theme: Theme, invert: boolean): string {
 /** Détail du log dans la tooltip (valeur ressenti colorée). */
 function LogTooltipBody({
   day,
+  showSensation,
   showPeriodDetails,
   showAnxiety,
   showSleep,
+  showEvents,
+  dayEvents,
 }: {
   day: DailyLogHistoryDay;
+  showSensation: boolean;
   showPeriodDetails: boolean;
   showAnxiety: boolean;
   showSleep: boolean;
+  showEvents: boolean;
+  dayEvents: UserEventView[];
 }) {
   const theme = useTheme();
 
   if (!day.filled || !day.log) {
     return (
-      <Typography variant="body2" color="text.secondary">
-        Ce jour n’a pas été renseigné.
-      </Typography>
+      <Box sx={{ display: 'block', lineHeight: 1.45 }}>
+        <Typography variant="body2" color="text.secondary">
+          Ce jour n’a pas été renseigné.
+        </Typography>
+        {showEvents && dayEvents.length > 0 ? (
+          <Box sx={{ mt: 0.5 }}>
+            <Typography component="div" variant="body2" fontWeight={600}>
+              Événements
+            </Typography>
+            {dayEvents.map((e) => (
+              <Typography
+                key={e.id}
+                component="div"
+                variant="body2"
+                sx={{ color: eventColorHex(e.color) }}
+              >
+                · {e.title}
+              </Typography>
+            ))}
+          </Box>
+        ) : null}
+      </Box>
     );
   }
 
@@ -442,12 +477,14 @@ function LogTooltipBody({
 
   return (
     <Box sx={{ display: 'block', lineHeight: 1.45, overflowWrap: 'break-word' }}>
-      <Typography component="div" variant="body2">
-        Ressenti :{' '}
-        <Box component="span" sx={{ color: scoreColor, fontWeight: 600 }}>
-          {row.sensation}
-        </Box>
-      </Typography>
+      {showSensation ? (
+        <Typography component="div" variant="body2">
+          Ressenti :{' '}
+          <Box component="span" sx={{ color: scoreColor, fontWeight: 600 }}>
+            {row.sensation}
+          </Box>
+        </Typography>
+      ) : null}
       {showAnxiety ? (
         <Typography component="div" variant="body2">
           Anxiété :{' '}
@@ -479,6 +516,23 @@ function LogTooltipBody({
           Commentaire : {row.comment.trim()}
         </Typography>
       ) : null}
+      {showEvents && dayEvents.length > 0 ? (
+        <Box sx={{ mt: 0.5 }}>
+          <Typography component="div" variant="body2" fontWeight={600}>
+            Événements
+          </Typography>
+          {dayEvents.map((e) => (
+            <Typography
+              key={e.id}
+              component="div"
+              variant="body2"
+              sx={{ color: eventColorHex(e.color) }}
+            >
+              · {e.title}
+            </Typography>
+          ))}
+        </Box>
+      ) : null}
     </Box>
   );
 }
@@ -486,14 +540,20 @@ function LogTooltipBody({
 /** Tooltip axe identique au défaut MUI, avec corps enrichi (couleur ressenti + champs log). */
 function SensationAxisTooltipContent({
   days,
+  events,
+  showSensation,
   showPeriodDetails,
   showAnxiety,
   showSleep,
+  showEvents,
 }: {
   days: DailyLogHistoryDay[];
+  events: UserEventView[];
+  showSensation: boolean;
   showPeriodDetails: boolean;
   showAnxiety: boolean;
   showSleep: boolean;
+  showEvents: boolean;
 }) {
   const tooltipData = useAxesTooltip();
 
@@ -502,7 +562,7 @@ function SensationAxisTooltipContent({
   return (
     <ChartsTooltipPaper className={chartsTooltipClasses.paper}>
       {tooltipData.map(
-        ({ axisId, mainAxis, axisValue, axisFormattedValue, seriesItems, dataIndex }) => (
+        ({ axisId, mainAxis, axisValue, axisFormattedValue, dataIndex }) => (
           <ChartsTooltipTable key={String(axisId)} className={chartsTooltipClasses.table}>
             {axisValue != null && !mainAxis.hideTooltip ? (
               <Typography component="caption" variant="caption" display="block">
@@ -526,9 +586,12 @@ function SensationAxisTooltipContent({
                     >
                       <LogTooltipBody
                         day={day}
+                        showSensation={showSensation}
                         showPeriodDetails={showPeriodDetails}
                         showAnxiety={showAnxiety}
                         showSleep={showSleep}
+                        showEvents={showEvents}
+                        dayEvents={eventsOnDay(events, day.date)}
                       />
                     </ChartsTooltipCell>
                   </ChartsTooltipRow>
@@ -576,6 +639,61 @@ function DayColumnHitTargets({
             pointerEvents="all"
             style={{ cursor: 'pointer' }}
             onClick={() => onSelectDate(d)}
+          />
+        );
+      })}
+    </g>
+  );
+}
+
+/** Bandes événements empilées en haut du graphique (plage continue start → end). */
+function EventRangeBandHighlights({
+  items,
+}: {
+  items: {
+    id: number;
+    title: string;
+    startDate: string;
+    endDate: string;
+    lane: number;
+    color: UserEventView['color'];
+  }[];
+}) {
+  const theme = useTheme();
+  const { top, height } = useDrawingArea();
+  const xScale = useXScale();
+
+  const bandwidth =
+    xScale && typeof xScale === 'function' && 'bandwidth' in xScale
+      ? (xScale as { bandwidth: () => number }).bandwidth()
+      : 0;
+
+  if (!bandwidth || items.length === 0) return null;
+
+  const laneCount = items.reduce((max, item) => Math.max(max, item.lane + 1), 0);
+  const bandTotalHeight = Math.max(
+    EVENT_LANE_MIN_HEIGHT_PX * laneCount,
+    height * EVENT_BAND_MAX_HEIGHT_RATIO,
+  );
+  const laneHeight = bandTotalHeight / laneCount;
+
+  return (
+    <g aria-hidden pointerEvents="none">
+      {items.map((item) => {
+        const bandStart = (xScale as (v: string) => number | undefined)(item.startDate);
+        const bandEnd = (xScale as (v: string) => number | undefined)(item.endDate);
+        if (bandStart === undefined || bandEnd === undefined) return null;
+        const w = bandEnd - bandStart + bandwidth;
+        if (w <= 0) return null;
+        return (
+          <rect
+            key={item.id}
+            x={bandStart}
+            y={top + item.lane * laneHeight}
+            width={w}
+            height={Math.max(EVENT_LANE_MIN_HEIGHT_PX, laneHeight - 1)}
+            fill={eventBandFill(eventColorHex(item.color), theme.palette.mode)}
+            rx={2}
           />
         );
       })}
@@ -648,16 +766,26 @@ function useMeasuredWidth<T extends HTMLElement>(active: boolean) {
   return { ref, width };
 }
 
-export function SensationChart({ days, range, onSelectDate, onViewportStatsChange }: Props) {
+export function SensationChart({
+  days,
+  range,
+  events = [],
+  onSelectDate,
+  onViewportStatsChange,
+}: Props) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const chartHeight = isMobile ? 300 : 320;
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const {
+    showSensationSeries,
+    showEventBands,
     showPeriodBands,
     showAnxietySeries,
     showSleepSeries,
+    setShowSensationSeries,
+    setShowEventBands,
     setShowPeriodBands,
     setShowAnxietySeries,
     setShowSleepSeries,
@@ -682,6 +810,17 @@ export function SensationChart({ days, range, onSelectDate, onViewportStatsChang
         .map((d) => ({ date: d.date, flow: d.log!.periodFlow })),
     [days],
   );
+
+  const timelineStart = days[0]?.date;
+  const timelineEnd = days[days.length - 1]?.date;
+
+  const eventBandItems = useMemo(() => {
+    if (!timelineStart || !timelineEnd || events.length === 0) return [];
+    const clipped = events
+      .map((e) => clipEventToTimeline(e, timelineStart, timelineEnd))
+      .filter((e): e is UserEventView => e !== null);
+    return assignEventLanes(clipped);
+  }, [events, timelineStart, timelineEnd]);
 
   const unfilledDates = useMemo(() => days.filter((d) => !d.filled).map((d) => d.date), [days]);
 
@@ -959,6 +1098,58 @@ export function SensationChart({ days, range, onSelectDate, onViewportStatsChang
     }));
   }, [days, overviewSmoothConfig]);
 
+  const chartLineSeries = useMemo(() => {
+    const series = [
+      ...(showSensationSeries
+        ? [
+            {
+              dataKey: 'sensation' as const,
+              label: '',
+              showMark: false,
+              color: SENSATION_CHART_COLOR,
+              connectNulls: false,
+              curve: lineCurve,
+            },
+          ]
+        : []),
+      ...(showAnxietySeries
+        ? [
+            {
+              dataKey: 'anxietyChartY' as const,
+              label: '',
+              showMark: false,
+              color: ANXIETY_CHART_COLOR,
+              connectNulls: false,
+              curve: lineCurve,
+            },
+          ]
+        : []),
+      ...(showSleepSeries
+        ? [
+            {
+              dataKey: 'sleepChartY' as const,
+              label: '',
+              showMark: false,
+              color: SLEEP_CHART_COLOR,
+              connectNulls: false,
+              curve: lineCurve,
+            },
+          ]
+        : []),
+    ];
+    if (series.length > 0) return series;
+    return [
+      {
+        dataKey: 'sensation' as const,
+        label: '',
+        showMark: false,
+        color: 'transparent',
+        connectNulls: false,
+        curve: lineCurve,
+      },
+    ];
+  }, [lineCurve, showAnxietySeries, showSensationSeries, showSleepSeries]);
+
   const targetTicksInViewport = isMobile ? 7 : 10;
   const minPxBetweenTicks = isMobile ? 38 : 46;
   const tickStepFromViewport = Math.max(
@@ -1009,15 +1200,26 @@ export function SensationChart({ days, range, onSelectDate, onViewportStatsChang
         <ChartsTooltipContainer {...props}>
           <SensationAxisTooltipContent
             days={days}
+            events={events}
+            showSensation={showSensationSeries}
             showPeriodDetails={showPeriodBands}
             showAnxiety={showAnxietySeries}
             showSleep={showSleepSeries}
+            showEvents={showEventBands}
           />
         </ChartsTooltipContainer>
       );
     }
     return ChartTooltipSlot;
-  }, [days, showPeriodBands, showAnxietySeries, showSleepSeries]);
+  }, [
+    days,
+    events,
+    showSensationSeries,
+    showEventBands,
+    showPeriodBands,
+    showAnxietySeries,
+    showSleepSeries,
+  ]);
 
   const legendSeriesSwatchSx = {
     width: 24,
@@ -1058,40 +1260,7 @@ export function SensationChart({ days, range, onSelectDate, onViewportStatsChang
           },
         ]}
         slots={{ tooltip: chartTooltipSlot, line: WideHitAnimatedLine }}
-        series={[
-          {
-            dataKey: 'sensation',
-            label: '',
-            showMark: false,
-            color: SENSATION_CHART_COLOR,
-            connectNulls: false,
-            curve: lineCurve,
-          },
-          ...(showAnxietySeries
-            ? [
-                {
-                  dataKey: 'anxietyChartY' as const,
-                  label: '',
-                  showMark: false,
-                  color: ANXIETY_CHART_COLOR,
-                  connectNulls: false,
-                  curve: lineCurve,
-                },
-              ]
-            : []),
-          ...(showSleepSeries
-            ? [
-                {
-                  dataKey: 'sleepChartY' as const,
-                  label: '',
-                  showMark: false,
-                  color: SLEEP_CHART_COLOR,
-                  connectNulls: false,
-                  curve: lineCurve,
-                },
-              ]
-            : []),
-        ]}
+        series={chartLineSeries}
         slotProps={{
           tooltip: {
             sx: {
@@ -1123,6 +1292,9 @@ export function SensationChart({ days, range, onSelectDate, onViewportStatsChang
           },
         }}
       >
+        {showEventBands && eventBandItems.length > 0 ? (
+          <EventRangeBandHighlights items={eventBandItems} />
+        ) : null}
         {showPeriodBands ? <PeriodDayBandHighlights bands={periodBands} /> : null}
         <ChartsReferenceLine
           y={0}
@@ -1150,60 +1322,7 @@ export function SensationChart({ days, range, onSelectDate, onViewportStatsChang
       }}
     >
       <Stack spacing={0} sx={{ width: '100%' }}>
-        <Stack spacing={1} sx={{ px: 1 }}>
-          <Stack
-            direction="row"
-            alignItems="center"
-            justifyContent="flex-start"
-            flexWrap="wrap"
-            sx={{
-              pt: { xs: 1.5, sm: 0 },
-              pb: 0,
-              gap: { xs: 1.5, sm: 2 },
-              rowGap: 1,
-            }}
-          >
-            <Stack direction="row" alignItems="center" spacing={1}>
-              <Box sx={{ ...legendSeriesSwatchSx, bgcolor: SENSATION_CHART_COLOR }} />
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                Ressenti
-              </Typography>
-            </Stack>
-            {showPeriodBands ? (
-              <Stack direction="row" alignItems="center" spacing={0.75}>
-                <Box
-                  sx={{
-                    width: 11,
-                    height: 14,
-                    flexShrink: 0,
-                    bgcolor: periodBandFill(theme),
-                    borderRadius: 0.5,
-                    border: `1px solid ${alpha(theme.palette.error.main, 0.28)}`,
-                    boxSizing: 'border-box',
-                  }}
-                />
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  Jour de règles (flux)
-                </Typography>
-              </Stack>
-            ) : null}
-            {showAnxietySeries ? (
-              <Stack direction="row" alignItems="center" spacing={1}>
-                <Box sx={{ ...legendSeriesSwatchSx, bgcolor: ANXIETY_CHART_COLOR }} />
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  Anxiété
-                </Typography>
-              </Stack>
-            ) : null}
-            {showSleepSeries ? (
-              <Stack direction="row" alignItems="center" spacing={1}>
-                <Box sx={{ ...legendSeriesSwatchSx, bgcolor: SLEEP_CHART_COLOR }} />
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  Sommeil
-                </Typography>
-              </Stack>
-            ) : null}
-          </Stack>
+        <Stack spacing={1} sx={{ px: 1, pt: { xs: 1.5, sm: 0 } }}>
           <Stack
             direction="row"
             alignItems="center"
@@ -1211,6 +1330,40 @@ export function SensationChart({ days, range, onSelectDate, onViewportStatsChang
             flexWrap="wrap"
             sx={{ gap: { xs: 0.5, sm: 1 }, columnGap: 2 }}
           >
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={showSensationSeries}
+                  onChange={(_, checked) => setShowSensationSeries(checked)}
+                  inputProps={{ 'aria-label': 'Afficher la courbe de ressenti' }}
+                />
+              }
+              label={
+                <Typography variant="caption" color="text.secondary">
+                  Ressenti
+                </Typography>
+              }
+              sx={{ mr: 0, ml: 0 }}
+            />
+            {events.length > 0 ? (
+              <FormControlLabel
+                control={
+                  <Switch
+                    size="small"
+                    checked={showEventBands}
+                    onChange={(_, checked) => setShowEventBands(checked)}
+                    inputProps={{ 'aria-label': 'Afficher les événements sur le graphe' }}
+                  />
+                }
+                label={
+                  <Typography variant="caption" color="text.secondary">
+                    Événements
+                  </Typography>
+                }
+                sx={{ mr: 0, ml: 0 }}
+              />
+            ) : null}
             <FormControlLabel
               control={
                 <Switch
@@ -1339,6 +1492,93 @@ export function SensationChart({ days, range, onSelectDate, onViewportStatsChang
             </Box>
           </Box>
         </Box>
+
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="flex-start"
+          flexWrap="wrap"
+          sx={{
+            px: 1,
+            pt: 1,
+            pb: { xs: 0.5, sm: 0 },
+            gap: { xs: 1.5, sm: 2 },
+            rowGap: 1,
+          }}
+        >
+          {showSensationSeries ? (
+            <Stack direction="row" alignItems="center" spacing={1}>
+              <Box sx={{ ...legendSeriesSwatchSx, bgcolor: SENSATION_CHART_COLOR }} />
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                Ressenti
+              </Typography>
+            </Stack>
+          ) : null}
+          {showEventBands && events.length > 0 ? (
+            <Stack direction="row" alignItems="center" spacing={0.75}>
+              <Box
+                aria-hidden
+                sx={{
+                  display: 'flex',
+                  width: 32,
+                  height: 14,
+                  flexShrink: 0,
+                  borderRadius: 0,
+                  overflow: 'hidden',
+                  boxSizing: 'border-box',
+                }}
+              >
+                {EVENT_COLOR_OPTIONS.map((option) => (
+                  <Box
+                    key={option.value}
+                    sx={{
+                      flex: 1,
+                      minWidth: 0,
+                      bgcolor: eventBandFill(option.hex, theme.palette.mode),
+                    }}
+                  />
+                ))}
+              </Box>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                Événements
+              </Typography>
+            </Stack>
+          ) : null}
+          {showPeriodBands ? (
+            <Stack direction="row" alignItems="center" spacing={0.75}>
+              <Box
+                sx={{
+                  width: 11,
+                  height: 14,
+                  flexShrink: 0,
+                  bgcolor: periodBandFill(theme),
+                  borderRadius: 0.5,
+                  border: `1px solid ${alpha(theme.palette.error.main, 0.28)}`,
+                  boxSizing: 'border-box',
+                }}
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                Jour de règles (flux)
+              </Typography>
+            </Stack>
+          ) : null}
+          {showAnxietySeries ? (
+            <Stack direction="row" alignItems="center" spacing={1}>
+              <Box sx={{ ...legendSeriesSwatchSx, bgcolor: ANXIETY_CHART_COLOR }} />
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                Anxiété
+              </Typography>
+            </Stack>
+          ) : null}
+          {showSleepSeries ? (
+            <Stack direction="row" alignItems="center" spacing={1}>
+              <Box sx={{ ...legendSeriesSwatchSx, bgcolor: SLEEP_CHART_COLOR }} />
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                Sommeil
+              </Typography>
+            </Stack>
+          ) : null}
+        </Stack>
       </Stack>
     </Card>
   );

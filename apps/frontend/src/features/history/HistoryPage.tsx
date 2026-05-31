@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { HistoryViewportStats } from './utils/historyViewportStats';
-import { Alert, Skeleton, Stack, Typography } from '@mui/material';
+import { Alert, Skeleton, Stack } from '@mui/material';
 import { AppLayout } from '../../components/layout/AppLayout';
 import { RangeSelector } from './components/RangeSelector';
 import { HistorySummary } from './components/HistorySummary';
 import { HistoryLogEditDialog } from './components/HistoryLogEditDialog';
 import { SensationChart } from './components/SensationChart';
 import { PeriodDaysList } from './components/PeriodDaysList';
+import { useHistoryEvents } from './hooks/useHistoryEvents';
 import { rangeToDates, useHistoryLogs, type RangeKey } from './hooks/useHistoryLogs';
 import {
   CHART_HELP_ZOOM_MIN_POINTS,
@@ -17,6 +18,7 @@ export function HistoryPage() {
   const [range, setRange] = useState<RangeKey>('30d');
   const { days, filledCount, initialLoading, error, periodDates, average, reload } =
     useHistoryLogs(range);
+  const { events } = useHistoryEvents(range);
   const [editDate, setEditDate] = useState<string | null>(null);
   const [viewportStats, setViewportStats] = useState<HistoryViewportStats | null>(null);
 
@@ -66,6 +68,7 @@ export function HistoryPage() {
           <SensationChart
             days={days}
             range={range}
+            events={events}
             onSelectDate={setEditDate}
             onViewportStatsChange={handleViewportStatsChange}
           />
