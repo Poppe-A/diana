@@ -1,6 +1,7 @@
 import { Stack, Tab, Tabs } from '@mui/material';
 import { useEffect, useState, type ReactNode } from 'react';
 import { PhysicalPainCard } from '../features/physicalPain/components/PhysicalPainCard';
+import type { PhysicalPainView } from '../features/physicalPain/types';
 
 export type JournalPainTab = 'journal' | 'pain';
 
@@ -9,9 +10,16 @@ type Props = {
   journal: ReactNode;
   /** Réinitialise sur « Journal » quand la date change (défaut : oui). */
   resetTabOnDateChange?: boolean;
+  /** Liste renvoyée par le PUT (mise à jour du graphe sans reload). */
+  onPainsUpdated?: (pains: PhysicalPainView[]) => void;
 };
 
-export function JournalPainTabs({ date, journal, resetTabOnDateChange = true }: Props) {
+export function JournalPainTabs({
+  date,
+  journal,
+  resetTabOnDateChange = true,
+  onPainsUpdated,
+}: Props) {
   const [tab, setTab] = useState<JournalPainTab>('journal');
 
   useEffect(() => {
@@ -30,7 +38,11 @@ export function JournalPainTabs({ date, journal, resetTabOnDateChange = true }: 
         <Tab value="pain" label="Douleurs" />
       </Tabs>
 
-      {tab === 'journal' ? journal : <PhysicalPainCard key={date} date={date} />}
+      {tab === 'journal' ? (
+        journal
+      ) : (
+        <PhysicalPainCard key={date} date={date} onPainsUpdated={onPainsUpdated} />
+      )}
     </Stack>
   );
 }

@@ -1,6 +1,6 @@
 # diana
 
-Tracker quotidien (ressenti **−10 à +10** : mal-être/douleur → bien-être, plus jour de règles).
+Tracker quotidien (ressenti **0 à 10** : mal-être → bien-être, plus jour de règles).
 
 ## Stack
 

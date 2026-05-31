@@ -12,7 +12,7 @@ type Props = {
   loading: boolean;
   onStartWizard: () => void;
   onWizardComplete: () => void;
-  onLogSaved: () => void;
+  onLogUpdated: (log: DailyLogView) => void;
 };
 
 export function DashboardTodayOnboarding({
@@ -22,7 +22,7 @@ export function DashboardTodayOnboarding({
   loading,
   onStartWizard,
   onWizardComplete,
-  onLogSaved,
+  onLogUpdated,
 }: Props) {
   if (loading || phase === 'loading') {
     return (
@@ -42,5 +42,5 @@ export function DashboardTodayOnboarding({
     return <DailyLogWizard date={today} onComplete={onWizardComplete} />;
   }
 
-  return <DashboardDayPanel date={today} log={log} onLogSaved={onLogSaved} />;
+  return <DashboardDayPanel date={today} log={log} onLogUpdated={onLogUpdated} />;
 }

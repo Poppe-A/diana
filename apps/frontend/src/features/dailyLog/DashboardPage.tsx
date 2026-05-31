@@ -19,7 +19,7 @@ dayjs.locale('fr');
 export function DashboardPage() {
   const { today, selectedDate, isToday, isFuture, shiftDay, selectDate, goToToday } =
     useSelectedDate();
-  const { log, loading, reload } = useDailyLog(selectedDate);
+  const { log, loading, reload, applyLog } = useDailyLog(selectedDate);
   const onboarding = useTodayOnboarding({ today, isToday, logLoading: loading, log });
 
   const header = useMemo(
@@ -36,8 +36,8 @@ export function DashboardPage() {
     void reload().then(() => onboarding.completeWizard());
   };
 
-  const handleLogSaved = () => {
-    void reload();
+  const handleLogUpdated = (updated: Parameters<typeof applyLog>[0]) => {
+    applyLog(updated);
   };
 
   return (
@@ -63,12 +63,12 @@ export function DashboardPage() {
             loading={loading}
             onStartWizard={onboarding.startWizard}
             onWizardComplete={handleWizardComplete}
-            onLogSaved={handleLogSaved}
+            onLogUpdated={handleLogUpdated}
           />
         ) : loading ? (
           <DashboardLoadingSkeleton />
         ) : (
-          <DashboardDayPanel date={selectedDate} log={log} onLogSaved={handleLogSaved} />
+          <DashboardDayPanel date={selectedDate} log={log} onLogUpdated={handleLogUpdated} />
         )}
       </Stack>
     </AppLayout>

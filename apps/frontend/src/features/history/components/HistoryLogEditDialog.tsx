@@ -11,10 +11,11 @@ import CloseIcon from '@mui/icons-material/Close';
 import dayjs from 'dayjs';
 import 'dayjs/locale/fr';
 import localizedFormat from 'dayjs/plugin/localizedFormat';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { JournalPainTabs } from '../../../components/JournalPainTabs';
 import { DailyLogForm } from '../../dailyLog/components/DailyLogForm';
 import type { DailyLogView } from '../../dailyLog/types';
+import type { PhysicalPainView } from '../../physicalPain/types';
 import { HistoryDialogDatePicker } from './HistoryDialogDatePicker';
 
 dayjs.extend(localizedFormat);
@@ -29,7 +30,8 @@ type Props = {
   initialLog: DailyLogView | null;
   onDateChange: (date: string) => void;
   onClose: () => void;
-  onSaved: () => void;
+  onLogUpdated: (log: DailyLogView) => void;
+  onPainsUpdated?: (pains: PhysicalPainView[]) => void;
 };
 
 export function HistoryLogEditDialog({
@@ -41,13 +43,27 @@ export function HistoryLogEditDialog({
   initialLog,
   onDateChange,
   onClose,
-  onSaved,
+  onLogUpdated,
+  onPainsUpdated,
 }: Props) {
   const [showForm, setShowForm] = useState(false);
+  const [formInitial, setFormInitial] = useState<DailyLogView | null>(initialLog);
+  const formDateRef = useRef<string | null>(null);
 
   useEffect(() => {
     setShowForm(false);
   }, [date]);
+
+  useEffect(() => {
+    if (!open || !date) {
+      formDateRef.current = null;
+      return;
+    }
+    if (formDateRef.current !== date) {
+      formDateRef.current = date;
+      setFormInitial(initialLog);
+    }
+  }, [open, date, initialLog]);
 
   if (!date) return null;
 
@@ -59,9 +75,13 @@ export function HistoryLogEditDialog({
     onClose();
   };
 
-  const handleSaved = () => {
+  const handleLogUpdated = (log: DailyLogView) => {
+    setFormInitial(log);
+    onLogUpdated(log);
+  };
+
+  const handleCommentSaved = () => {
     setShowForm(false);
-    onSaved();
     onClose();
   };
 
@@ -97,13 +117,15 @@ export function HistoryLogEditDialog({
 
           <JournalPainTabs
             date={date}
+            onPainsUpdated={onPainsUpdated}
             journal={
               canEdit ? (
                 <DailyLogForm
                   key={date}
                   date={date}
-                  initial={initialLog}
-                  onSaved={handleSaved}
+                  initial={formInitial}
+                  onLogUpdated={handleLogUpdated}
+                  onCommentSaved={handleCommentSaved}
                 />
               ) : (
                 <Stack spacing={2.5} sx={{ py: 0.5 }}>

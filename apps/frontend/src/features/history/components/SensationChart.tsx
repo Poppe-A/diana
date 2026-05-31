@@ -15,7 +15,6 @@ import {
 import { alpha } from '@mui/material/styles';
 import type { Theme } from '@mui/material/styles';
 import {
-  ChartsReferenceLine,
   ChartsTooltipCell,
   ChartsTooltipContainer,
   ChartsTooltipPaper,
@@ -55,6 +54,7 @@ import { clipEventToTimeline } from '../../events/utils/clipEventToTimeline';
 import { eventsOnDay } from '../../events/utils/eventsOnDay';
 import { useHistoryChartDisplay } from '../hooks/useHistoryChartDisplay';
 import type { RangeKey } from '../hooks/useHistoryLogs';
+import type { PhysicalPainView } from '../../physicalPain/types';
 import {
   computeHistoryViewportStats,
   computeVisibleDayIndices,
@@ -77,18 +77,13 @@ type Props = {
   onSelectDate?: (date: string) => void;
   /** Stats recalculées pour les jours visibles (zoom + défilement). `null` = toute la période. */
   onViewportStatsChange?: (stats: HistoryViewportStats | null) => void;
+  painsByDate: Map<string, PhysicalPainView[]>;
+  zoneLabelsByCode: Map<string, string>;
 };
 
-/** Anxiété saisie sur 0…10, même axe vertical que le ressenti : 0 → −10, 10 → +10 (linéaire). */
-function anxietyLevelToChartY(anxiety01To10: number): number {
-  const x = Math.min(10, Math.max(0, anxiety01To10));
-  return -10 + (x / 10) * 20;
-}
-
-/** Sommeil saisie sur 0…10, même axe vertical que le ressenti. */
-function sleepQualityToChartY(sleep0To10: number): number {
-  const x = Math.min(10, Math.max(0, sleep0To10));
-  return -10 + (x / 10) * 20;
+/** Valeur 0…10 affichée sur l’axe vertical du graphe (ressenti, anxiété, sommeil). */
+function scale0To10ChartY(value: number): number {
+  return Math.min(10, Math.max(0, value));
 }
 
 const SLEEP_CHART_COLOR = '#5b21b6';
@@ -409,10 +404,10 @@ function gradientRedGreen(towardRed: number, theme: Theme): string {
   return `rgb(${lerpChannel(green[0], red[0], t)}, ${lerpChannel(green[1], red[1], t)}, ${lerpChannel(green[2], red[2], t)})`;
 }
 
-/** −10 → rouge, +10 → vert, 0 → intermédiaire. */
+/** 0 → rouge, 10 → vert, 5 → intermédiaire. */
 function sensationValueColor(sensation: number, theme: Theme): string {
-  const clamped = Math.min(10, Math.max(-10, sensation));
-  const towardRed = 1 - (clamped + 10) / 20;
+  const clamped = Math.min(10, Math.max(0, sensation));
+  const towardRed = 1 - clamped / 10;
   return gradientRedGreen(towardRed, theme);
 }
 
@@ -423,6 +418,51 @@ function scale0To10Color(value: number, theme: Theme, invert: boolean): string {
   return gradientRedGreen(towardRed, theme);
 }
 
+function PainTooltipSection({
+  pains,
+  zoneLabelsByCode,
+}: {
+  pains: PhysicalPainView[];
+  zoneLabelsByCode: Map<string, string>;
+}) {
+  if (pains.length === 0) {
+    return (
+      <Typography component="div" variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+        Aucune douleur renseignée.
+      </Typography>
+    );
+  }
+
+  return (
+    <Box sx={{ mt: 0.75 }}>
+      <Typography component="div" variant="body2" fontWeight={600}>
+        Douleurs
+      </Typography>
+      {pains.map((pain) => {
+        const zoneLabel = zoneLabelsByCode.get(pain.zoneCode) ?? pain.zoneCode;
+        const comment = pain.comment?.trim();
+        return (
+          <Box key={pain.id} sx={{ mt: 0.35 }}>
+            <Typography component="div" variant="body2">
+              {zoneLabel} · {pain.intensity}/10
+            </Typography>
+            {comment ? (
+              <Typography
+                component="div"
+                variant="body2"
+                color="text.secondary"
+                sx={{ whiteSpace: 'pre-line' }}
+              >
+                {comment}
+              </Typography>
+            ) : null}
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
+
 /** Détail du log dans la tooltip (valeur ressenti colorée). */
 function LogTooltipBody({
   day,
@@ -431,7 +471,10 @@ function LogTooltipBody({
   showAnxiety,
   showSleep,
   showEvents,
+  showPainDetails,
   dayEvents,
+  dayPains,
+  zoneLabelsByCode,
 }: {
   day: DailyLogHistoryDay;
   showSensation: boolean;
@@ -439,7 +482,10 @@ function LogTooltipBody({
   showAnxiety: boolean;
   showSleep: boolean;
   showEvents: boolean;
+  showPainDetails: boolean;
   dayEvents: UserEventView[];
+  dayPains: PhysicalPainView[];
+  zoneLabelsByCode: Map<string, string>;
 }) {
   const theme = useTheme();
 
@@ -465,6 +511,9 @@ function LogTooltipBody({
               </Typography>
             ))}
           </Box>
+        ) : null}
+        {showPainDetails ? (
+          <PainTooltipSection pains={dayPains} zoneLabelsByCode={zoneLabelsByCode} />
         ) : null}
       </Box>
     );
@@ -535,6 +584,9 @@ function LogTooltipBody({
           ))}
         </Box>
       ) : null}
+      {showPainDetails ? (
+        <PainTooltipSection pains={dayPains} zoneLabelsByCode={zoneLabelsByCode} />
+      ) : null}
     </Box>
   );
 }
@@ -543,19 +595,25 @@ function LogTooltipBody({
 function SensationAxisTooltipContent({
   days,
   events,
+  painsByDate,
+  zoneLabelsByCode,
   showSensation,
   showPeriodDetails,
   showAnxiety,
   showSleep,
   showEvents,
+  showPainDetails,
 }: {
   days: DailyLogHistoryDay[];
   events: UserEventView[];
+  painsByDate: Map<string, PhysicalPainView[]>;
+  zoneLabelsByCode: Map<string, string>;
   showSensation: boolean;
   showPeriodDetails: boolean;
   showAnxiety: boolean;
   showSleep: boolean;
   showEvents: boolean;
+  showPainDetails: boolean;
 }) {
   const tooltipData = useAxesTooltip();
 
@@ -593,7 +651,10 @@ function SensationAxisTooltipContent({
                         showAnxiety={showAnxiety}
                         showSleep={showSleep}
                         showEvents={showEvents}
+                        showPainDetails={showPainDetails}
                         dayEvents={eventsOnDay(events, day.date)}
+                        dayPains={painsByDate.get(day.date) ?? []}
+                        zoneLabelsByCode={zoneLabelsByCode}
                       />
                     </ChartsTooltipCell>
                   </ChartsTooltipRow>
@@ -740,6 +801,39 @@ function UnfilledDayBandHighlights({ dates }: { dates: string[] }) {
   );
 }
 
+/** Point rouge sur l’axe X (y = 0) pour les jours avec au moins une douleur (si option activée). */
+const PAIN_AXIS_DOT_RADIUS = 3;
+
+function PainAxisDotMarkers({ dates }: { dates: string[] }) {
+  const theme = useTheme();
+  const { top, height } = useDrawingArea();
+  const xScale = useXScale();
+
+  const bandwidth =
+    xScale && typeof xScale === 'function' && 'bandwidth' in xScale
+      ? (xScale as { bandwidth: () => number }).bandwidth()
+      : 0;
+
+  if (!bandwidth || dates.length === 0) return null;
+
+  // Dans la zone de tracé (clip MUI) : ancré sur la ligne y = 0, sous les courbes.
+  const y = top + height - PAIN_AXIS_DOT_RADIUS;
+  const fill = theme.palette.error.main;
+
+  return (
+    <g aria-hidden pointerEvents="none">
+      {dates.map((d) => {
+        const bandStart = (xScale as (v: string) => number | undefined)(d);
+        if (bandStart === undefined) return null;
+        const cx = bandStart + bandwidth / 2;
+        return (
+          <circle key={d} cx={cx} cy={y} r={PAIN_AXIS_DOT_RADIUS} fill={fill} />
+        );
+      })}
+    </g>
+  );
+}
+
 /** Bandes « jour de règles » : hauteur proportionnelle à l’intensité du flux, ancrées en bas de la zone de tracé. */
 function PeriodDayBandHighlights({
   bands,
@@ -812,6 +906,8 @@ export function SensationChart({
   dataLoading = false,
   onSelectDate,
   onViewportStatsChange,
+  painsByDate,
+  zoneLabelsByCode,
 }: Props) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -825,12 +921,14 @@ export function SensationChart({
     showPeriodBands,
     showAnxietySeries,
     showSleepSeries,
+    showPainDetailsInTooltip,
     setShowSensationSeries,
     setShowEventBands,
     setShowUnfilledDayBands,
     setShowPeriodBands,
     setShowAnxietySeries,
     setShowSleepSeries,
+    setShowPainDetailsInTooltip,
   } = useHistoryChartDisplay();
 
   /** Zoom volontairement en mémoire session uniquement (jamais localStorage). */
@@ -865,6 +963,13 @@ export function SensationChart({
   }, [events, timelineStart, timelineEnd]);
 
   const unfilledDates = useMemo(() => days.filter((d) => !d.filled).map((d) => d.date), [days]);
+
+  const painAxisDates = useMemo(() => {
+    if (!showPainDetailsInTooltip) return [];
+    return days
+      .filter((d) => (painsByDate.get(d.date)?.length ?? 0) > 0)
+      .map((d) => d.date);
+  }, [days, painsByDate, showPainDetailsInTooltip]);
 
   const { ref: measureRef, width: chartWidth } = useMeasuredWidth<HTMLDivElement>(days.length > 0);
 
@@ -1119,10 +1224,10 @@ export function SensationChart({
   const dataset = useMemo(() => {
     const sensationRaw = days.map((d) => (d.filled && d.log ? d.log.sensation : null));
     const anxietyRaw = days.map((d) =>
-      d.filled && d.log ? anxietyLevelToChartY(d.log.anxietyLevel ?? 0) : null,
+      d.filled && d.log ? scale0To10ChartY(d.log.anxietyLevel ?? 0) : null,
     );
     const sleepRaw = days.map((d) =>
-      d.filled && d.log ? sleepQualityToChartY(d.log.sleepQuality ?? 0) : null,
+      d.filled && d.log ? scale0To10ChartY(d.log.sleepQuality ?? 0) : null,
     );
 
     const smooth = (values: (number | null)[]) =>
@@ -1231,7 +1336,7 @@ export function SensationChart({
 
   /**
    * MUI réserve en plus des marges une zone « axis » (~45px par défaut à gauche pour le Y).
-   * Sans largeur explicite, cette réserve est trop large pour des ticks courts (−10…10),
+   * Sans largeur explicite, cette réserve est trop large pour des ticks courts (0…10),
    * ce qui laisse trop de vide à gauche et donne l’impression que la courbe est décalée à droite.
    */
   const yAxisReservedWidth = isMobile ? 30 : 40;
@@ -1256,11 +1361,14 @@ export function SensationChart({
           <SensationAxisTooltipContent
             days={days}
             events={events}
+            painsByDate={painsByDate}
+            zoneLabelsByCode={zoneLabelsByCode}
             showSensation={showSensationSeries}
             showPeriodDetails={showPeriodBands}
             showAnxiety={showAnxietySeries}
             showSleep={showSleepSeries}
             showEvents={showEventBands}
+            showPainDetails={showPainDetailsInTooltip}
           />
         </ChartsTooltipContainer>
       );
@@ -1275,6 +1383,9 @@ export function SensationChart({
     showPeriodBands,
     showAnxietySeries,
     showSleepSeries,
+    showPainDetailsInTooltip,
+    painsByDate,
+    zoneLabelsByCode,
   ]);
 
   const legendSeriesSwatchSx = {
@@ -1346,6 +1457,23 @@ export function SensationChart({
     ],
   );
 
+  const chartDisplayFooterOptions = useMemo(
+    () => [
+      {
+        id: 'pain-details',
+        label: 'Inclure les douleurs au détail',
+        checked: showPainDetailsInTooltip,
+        onChange: setShowPainDetailsInTooltip,
+        visible: true,
+      },
+    ],
+    [showPainDetailsInTooltip, setShowPainDetailsInTooltip],
+  );
+
+  const tooltipMaxWidth = showPainDetailsInTooltip
+    ? 'min(480px, calc(100vw - 24px))'
+    : 'min(320px, calc(100vw - 32px))';
+
   if (!dataLoading && days.length === 0) {
     return (
       <Card variant="outlined">
@@ -1368,7 +1496,7 @@ export function SensationChart({
         xAxis={[xAxisConfig]}
         yAxis={[
           {
-            min: -10,
+            min: 0,
             max: 10,
             domainLimit: 'strict',
             width: yAxisReservedWidth,
@@ -1383,8 +1511,8 @@ export function SensationChart({
         slotProps={{
           tooltip: {
             sx: {
-              /** Popper : pas pleine largeur écran, marges latérales ~16px via calc */
-              maxWidth: 'min(320px, calc(100vw - 32px))',
+              /** Popper : plus large si détail des douleurs activé */
+              maxWidth: tooltipMaxWidth,
               [`& .${chartsTooltipClasses.paper}`]: {
                 maxWidth: '100%',
                 boxSizing: 'border-box',
@@ -1418,14 +1546,9 @@ export function SensationChart({
           <EventRangeBandHighlights items={eventBandItems} />
         ) : null}
         {!dataLoading && showPeriodBands ? <PeriodDayBandHighlights bands={periodBands} /> : null}
-        <ChartsReferenceLine
-          y={0}
-          lineStyle={{
-            stroke: theme.palette.text.secondary,
-            strokeDasharray: '4 4',
-            opacity: 0.6,
-          }}
-        />
+        {!dataLoading && showPainDetailsInTooltip && painAxisDates.length > 0 ? (
+          <PainAxisDotMarkers dates={painAxisDates} />
+        ) : null}
         {!dataLoading ? (
           <DayColumnHitTargets dates={unfilledDates} onSelectDate={onSelectDate} />
         ) : null}
@@ -1450,13 +1573,16 @@ export function SensationChart({
         <Box
           sx={{
             display: 'flex',
-            justifyContent: 'flex-end',
+            justifyContent: 'flex-start',
             px: 1,
             pt: { xs: 0.5, sm: 0 },
             pb: zoomSliderActive ? 0.5 : 0,
           }}
         >
-          <HistoryChartDisplayMenu options={chartDisplayMenuOptions} />
+          <HistoryChartDisplayMenu
+            options={chartDisplayMenuOptions}
+            footerOptions={chartDisplayFooterOptions}
+          />
         </Box>
 
         {zoomSliderActive ? (
@@ -1652,6 +1778,24 @@ export function SensationChart({
               <Box sx={{ ...legendSeriesSwatchSx, bgcolor: SLEEP_CHART_COLOR }} />
               <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
                 Sommeil
+              </Typography>
+            </Stack>
+          ) : null}
+          {showPainDetailsInTooltip && painAxisDates.length > 0 ? (
+            <Stack direction="row" alignItems="center" spacing={0.75}>
+              <Box
+                component="span"
+                aria-hidden
+                sx={{
+                  width: PAIN_AXIS_DOT_RADIUS * 2,
+                  height: PAIN_AXIS_DOT_RADIUS * 2,
+                  flexShrink: 0,
+                  borderRadius: '50%',
+                  bgcolor: 'error.main',
+                }}
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                Douleur
               </Typography>
             </Stack>
           ) : null}

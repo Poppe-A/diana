@@ -8,9 +8,10 @@ const mobileMarks = [0, 10].map((value) => ({ value, label: `${value}` }));
 type Props = {
   value: number;
   onChange: (value: number) => void;
+  onChangeCommitted?: (value: number) => void;
 };
 
-export function SleepSlider({ value, onChange }: Props) {
+export function SleepSlider({ value, onChange, onChangeCommitted }: Props) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
@@ -32,6 +33,11 @@ export function SleepSlider({ value, onChange }: Props) {
         max={SLEEP_QUALITY_MAX}
         value={value}
         onChange={(_, v) => onChange(v as number)}
+        onChangeCommitted={
+          onChangeCommitted
+            ? (_, v) => onChangeCommitted(v as number)
+            : undefined
+        }
         sx={{
           mt: 2,
           py: 1,

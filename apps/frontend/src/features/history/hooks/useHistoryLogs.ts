@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dayjs from 'dayjs';
 import { fetchLogsRange } from '../../dailyLog/api';
-import type { DailyLogHistoryDay } from '../../dailyLog/types';
+import type { DailyLogHistoryDay, DailyLogView } from '../../dailyLog/types';
 import { densifyHistoryDays } from '../utils/densifyHistoryDays';
 
 export type RangeKey = '30d' | '3m' | '1y';
@@ -53,6 +53,14 @@ export function useHistoryLogs(range: RangeKey) {
 
   const reload = useCallback(() => load(true), [load]);
 
+  const patchDay = useCallback((log: DailyLogView) => {
+    setDays((current) =>
+      current.map((day) =>
+        day.date === log.date ? { date: log.date, filled: true, log } : day,
+      ),
+    );
+  }, []);
+
   const filledDays = useMemo(() => days.filter((d) => d.filled && d.log), [days]);
 
   const periodDates = useMemo(
@@ -74,6 +82,7 @@ export function useHistoryLogs(range: RangeKey) {
     isRefreshing,
     error,
     reload,
+    patchDay,
     periodDates,
     average,
   };

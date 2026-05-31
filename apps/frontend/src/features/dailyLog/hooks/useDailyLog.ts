@@ -6,8 +6,8 @@ export function useDailyLog(date: string) {
   const [log, setLog] = useState<DailyLogView | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
+  const reload = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) setLoading(true);
     try {
       const data = await fetchLogByDate(date);
       setLog(data);
@@ -16,7 +16,7 @@ export function useDailyLog(date: string) {
       setLog(null);
       return null;
     } finally {
-      setLoading(false);
+      if (!options?.silent) setLoading(false);
     }
   }, [date]);
 
@@ -39,5 +39,9 @@ export function useDailyLog(date: string) {
     };
   }, [date]);
 
-  return { log, loading, reload };
+  const applyLog = useCallback((next: DailyLogView) => {
+    setLog(next);
+  }, []);
+
+  return { log, loading, reload, applyLog };
 }

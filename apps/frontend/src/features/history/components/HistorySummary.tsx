@@ -43,9 +43,9 @@ export function HistorySummary({ count, average, periodDays, viewportLabel }: Pr
   const avgColor =
     average === null
       ? undefined
-      : average > 1
+      : average > 5.5
         ? 'success.main'
-        : average < -1
+        : average < 4.5
           ? 'error.main'
           : 'text.primary';
 

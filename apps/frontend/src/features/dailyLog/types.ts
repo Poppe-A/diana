@@ -43,8 +43,10 @@ export type DailyLogHistoryDay = {
   log: DailyLogView | null;
 };
 
-export const SENSATION_MIN = -10;
+/** 0 = très mauvais, 5 = neutre, 10 = excellent */
+export const SENSATION_MIN = 0;
 export const SENSATION_MAX = 10;
+export const SENSATION_NEUTRAL = 5;
 
 export const ANXIETY_MIN = 0;
 export const ANXIETY_MAX = 10;

@@ -7,11 +7,6 @@ import {
   Button,
   Card,
   CardContent,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
   Divider,
   FormControl,
   FormControlLabel,
@@ -23,7 +18,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AutoDismissSnackbar } from '../../../components/AutoDismissSnackbar';
 import { AnxietySlider } from './AnxietySlider';
 import { SleepSlider } from './SleepSlider';
@@ -41,16 +36,9 @@ import {
   type DailyLogView,
 } from '../types';
 import { saveDailyLog } from '../api';
-import { draftToSavePayload } from '../dailyLogPayload';
+import { draftFromLog, draftToSavePayload, type DailyLogDraft } from '../dailyLogPayload';
 
-type Form = {
-  sensation: number;
-  anxietyLevel: number;
-  sleepQuality: number;
-  comment: string;
-  isPeriodDay: boolean;
-  periodFlow: '' | PeriodFlowLevel;
-};
+type Form = DailyLogDraft;
 
 const PERIOD_FLOW_FORM_VALUES: Array<'' | PeriodFlowLevel> = ['', ...PERIOD_FLOW_ORDER];
 
@@ -65,103 +53,115 @@ const schema: yup.ObjectSchema<Form> = yup
   })
   .required();
 
+function formSnapshot(values: Form): string {
+  return JSON.stringify({
+    sensation: values.sensation,
+    anxietyLevel: values.anxietyLevel,
+    sleepQuality: values.sleepQuality,
+    comment: values.comment,
+    isPeriodDay: values.isPeriodDay,
+    periodFlow: values.periodFlow,
+  });
+}
+
 type Props = {
   date: string;
   initial?: DailyLogView | null;
-  /** Appelé après une sauvegarde réussie (ex. rafraîchir l’historique). */
-  onSaved?: () => void;
+  /** Log renvoyé par l’API après sauvegarde — mise à jour du state parent, sans reload. */
+  onLogUpdated?: (log: DailyLogView) => void;
+  /** Uniquement après « Enregistrer le commentaire » (ex. fermer la modale). */
+  onCommentSaved?: () => void;
 };
 
-export function DailyLogForm({ date, initial, onSaved }: Props) {
+export function DailyLogForm({ date, initial, onLogUpdated, onCommentSaved }: Props) {
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pendingValues, setPendingValues] = useState<Form | null>(null);
-  const hasExistingLog = Boolean(initial);
+  const [autoSaving, setAutoSaving] = useState(false);
+  const lastSavedSnapshotRef = useRef<string | null>(null);
+  const persistInFlightRef = useRef(false);
+
+  const defaultFormValues = draftFromLog(initial);
 
   const {
     control,
     handleSubmit,
     reset,
     setValue,
-    formState: { isSubmitting, isDirty },
+    getValues,
+    formState: { isSubmitting, isDirty, dirtyFields },
   } = useForm<Form>({
     resolver: yupResolver(schema),
-    defaultValues: {
-      sensation: initial?.sensation ?? 0,
-      anxietyLevel: initial?.anxietyLevel ?? 0,
-      sleepQuality: initial?.sleepQuality ?? 0,
-      comment: initial?.comment ?? '',
-      isPeriodDay: initial?.isPeriodDay ?? false,
-      periodFlow: initial?.periodFlow ?? '',
-    },
+    defaultValues: defaultFormValues,
   });
 
   useEffect(() => {
-    if (initial) {
-      reset({
-        sensation: initial.sensation,
-        anxietyLevel: initial.anxietyLevel ?? 0,
-        sleepQuality: initial.sleepQuality ?? 0,
-        comment: initial.comment ?? '',
-        isPeriodDay: initial.isPeriodDay,
-        periodFlow: initial.periodFlow ?? '',
-      });
-    }
-  }, [initial, reset]);
+    const values = draftFromLog(initial);
+    reset(values);
+    lastSavedSnapshotRef.current = initial ? formSnapshot(values) : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resync seulement au changement de date
+  }, [date, reset]);
 
   const isPeriodDay = useWatch({ control, name: 'isPeriodDay' });
+  const commentValue = useWatch({ control, name: 'comment' });
 
   useEffect(() => {
     if (isDirty) setSuccessToast(null);
   }, [isDirty]);
 
-  const persist = async (values: Form) => {
-    setError(null);
+  const persist = useCallback(
+    async (values: Form, options: { afterComment?: boolean }) => {
+      setError(null);
+      try {
+        const saved = await saveDailyLog(date, draftToSavePayload(values));
+        const synced = draftFromLog(saved);
+        setSuccessToast(`Enregistré à ${new Date().toLocaleTimeString('fr-FR')}.`);
+        lastSavedSnapshotRef.current = formSnapshot(synced);
+        reset(synced);
+        onLogUpdated?.(saved);
+        if (options.afterComment) {
+          onCommentSaved?.();
+        }
+      } catch {
+        setError('Impossible d’enregistrer pour le moment. Réessaie plus tard.');
+      }
+    },
+    [date, onCommentSaved, onLogUpdated, reset],
+  );
+
+  const persistCurrentIfChanged = useCallback(async () => {
+    const values = getValues();
+    const snapshot = formSnapshot(values);
+    if (lastSavedSnapshotRef.current === snapshot) return;
+    if (persistInFlightRef.current) return;
+
+    persistInFlightRef.current = true;
+    setAutoSaving(true);
     try {
-      await saveDailyLog(
-        date,
-        draftToSavePayload({
-          sensation: values.sensation,
-          anxietyLevel: values.anxietyLevel,
-          sleepQuality: values.sleepQuality,
-          comment: values.comment,
-          isPeriodDay: values.isPeriodDay,
-          periodFlow: values.periodFlow,
-        }),
-      );
-      setSuccessToast(`Enregistré à ${new Date().toLocaleTimeString('fr-FR')}.`);
-      reset(values);
-      onSaved?.();
-    } catch {
-      setError('Impossible d’enregistrer pour le moment. Réessaie plus tard.');
+      await persist(values, {});
+    } finally {
+      persistInFlightRef.current = false;
+      setAutoSaving(false);
     }
+  }, [getValues, persist]);
+
+  const onSubmitComment = async (values: Form) => {
+    await persist(values, { afterComment: true });
   };
 
-  const onSubmit = async (values: Form) => {
-    if (hasExistingLog) {
-      setPendingValues(values);
-      return;
-    }
-    await persist(values);
-  };
-
-  const handleCancelOverwrite = () => {
-    setPendingValues(null);
-  };
-
-  const handleConfirmOverwrite = async () => {
-    if (!pendingValues) return;
-    const values = pendingValues;
-    setPendingValues(null);
-    await persist(values);
-  };
+  const saving = isSubmitting || autoSaving;
+  const commentDirty = Boolean(dirtyFields.comment);
+  const canSaveComment =
+    commentDirty || (!initial && commentValue.trim().length > 0);
 
   return (
-    <Card variant="outlined" component="form" onSubmit={handleSubmit(onSubmit)}>
+    <Card variant="outlined" component="form" onSubmit={handleSubmit(onSubmitComment)}>
       <CardContent>
         <Stack spacing={3}>
           <Stack spacing={0.5}>
             <Typography variant="h6">Ressenti global</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Les curseurs sont enregistrés dès que tu relâches le bouton.
+            </Typography>
           </Stack>
 
           <Box>
@@ -169,7 +169,11 @@ export function DailyLogForm({ date, initial, onSaved }: Props) {
               name="sensation"
               control={control}
               render={({ field }) => (
-                <SensationSlider value={field.value} onChange={field.onChange} />
+                <SensationSlider
+                  value={field.value}
+                  onChange={field.onChange}
+                  onChangeCommitted={() => void persistCurrentIfChanged()}
+                />
               )}
             />
           </Box>
@@ -180,7 +184,11 @@ export function DailyLogForm({ date, initial, onSaved }: Props) {
               name="anxietyLevel"
               control={control}
               render={({ field }) => (
-                <AnxietySlider value={field.value} onChange={field.onChange} />
+                <AnxietySlider
+                  value={field.value}
+                  onChange={field.onChange}
+                  onChangeCommitted={() => void persistCurrentIfChanged()}
+                />
               )}
             />
           </Box>
@@ -190,7 +198,13 @@ export function DailyLogForm({ date, initial, onSaved }: Props) {
             <Controller
               name="sleepQuality"
               control={control}
-              render={({ field }) => <SleepSlider value={field.value} onChange={field.onChange} />}
+              render={({ field }) => (
+                <SleepSlider
+                  value={field.value}
+                  onChange={field.onChange}
+                  onChangeCommitted={() => void persistCurrentIfChanged()}
+                />
+              )}
             />
           </Box>
 
@@ -202,11 +216,13 @@ export function DailyLogForm({ date, initial, onSaved }: Props) {
                 control={
                   <Switch
                     checked={field.value}
+                    disabled={saving}
                     onChange={(_, checked) => {
                       field.onChange(checked);
                       if (!checked) {
                         setValue('periodFlow', '', { shouldDirty: true });
                       }
+                      void Promise.resolve().then(() => persistCurrentIfChanged());
                     }}
                   />
                 }
@@ -224,9 +240,14 @@ export function DailyLogForm({ date, initial, onSaved }: Props) {
                   <InputLabel id="daily-log-period-flow-label">Intensité du flux</InputLabel>
                   <Select
                     {...field}
+                    disabled={saving}
                     labelId="daily-log-period-flow-label"
                     label="Intensité du flux"
                     value={field.value}
+                    onChange={(e) => {
+                      field.onChange(e.target.value);
+                      void Promise.resolve().then(() => persistCurrentIfChanged());
+                    }}
                   >
                     <MenuItem value="">
                       <em>Non renseigné</em>
@@ -266,42 +287,17 @@ export function DailyLogForm({ date, initial, onSaved }: Props) {
             onClose={() => setSuccessToast(null)}
           />
 
-          <Button type="submit" variant="contained" size="medium" disabled={isSubmitting} fullWidth>
-            Enregistrer
+          <Button
+            type="submit"
+            variant="contained"
+            size="medium"
+            disabled={saving || !canSaveComment}
+            fullWidth
+          >
+            Enregistrer le commentaire
           </Button>
         </Stack>
       </CardContent>
-
-      <Dialog
-        open={pendingValues !== null}
-        onClose={handleCancelOverwrite}
-        aria-labelledby="daily-log-overwrite-title"
-        aria-describedby="daily-log-overwrite-description"
-      >
-        <DialogTitle id="daily-log-overwrite-title">
-          Écraser les données existantes&nbsp;?
-        </DialogTitle>
-        <DialogContent>
-          <DialogContentText id="daily-log-overwrite-description">
-            Ce jour a déjà été renseigné. En confirmant, les données précédentes seront remplacées
-            par celles que tu viens de saisir. Cette action est irréversible.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCancelOverwrite} disabled={isSubmitting}>
-            Annuler
-          </Button>
-          <Button
-            onClick={handleConfirmOverwrite}
-            variant="contained"
-            color="primary"
-            disabled={isSubmitting}
-            autoFocus
-          >
-            Écraser
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Card>
   );
 }

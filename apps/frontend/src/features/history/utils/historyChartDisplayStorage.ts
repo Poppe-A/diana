@@ -5,6 +5,7 @@ export type HistoryChartDisplayPrefs = {
   showPeriodBands: boolean;
   showAnxietySeries: boolean;
   showSleepSeries: boolean;
+  showPainDetailsInTooltip: boolean;
 };
 
 const STORAGE_KEY = 'diana:historyChart:display';
@@ -16,6 +17,7 @@ const DEFAULT_PREFS: HistoryChartDisplayPrefs = {
   showPeriodBands: false,
   showAnxietySeries: false,
   showSleepSeries: false,
+  showPainDetailsInTooltip: false,
 };
 
 export function readHistoryChartDisplayPrefs(): HistoryChartDisplayPrefs {
@@ -39,6 +41,7 @@ export function readHistoryChartDisplayPrefs(): HistoryChartDisplayPrefs {
       showPeriodBands: Boolean(parsed.showPeriodBands),
       showAnxietySeries: Boolean(parsed.showAnxietySeries),
       showSleepSeries: Boolean(parsed.showSleepSeries),
+      showPainDetailsInTooltip: Boolean(parsed.showPainDetailsInTooltip),
     };
   } catch {
     return { ...DEFAULT_PREFS };

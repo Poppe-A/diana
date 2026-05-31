@@ -11,7 +11,7 @@ export type DailyLogDraft = {
 };
 
 export const EMPTY_DAILY_LOG_DRAFT: DailyLogDraft = {
-  sensation: 0,
+  sensation: 5,
   anxietyLevel: 0,
   sleepQuality: 0,
   comment: '',

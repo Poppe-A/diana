@@ -5,15 +5,15 @@ import type { DailyLogView } from '../types';
 type Props = {
   date: string;
   log: DailyLogView | null;
-  onLogSaved: () => void;
+  onLogUpdated: (log: DailyLogView) => void;
 };
 
-export function DashboardDayPanel({ date, log, onLogSaved }: Props) {
+export function DashboardDayPanel({ date, log, onLogUpdated }: Props) {
   return (
     <JournalPainTabs
       date={date}
       journal={
-        <DailyLogForm key={date} date={date} initial={log} onSaved={onLogSaved} />
+        <DailyLogForm key={date} date={date} initial={log} onLogUpdated={onLogUpdated} />
       }
     />
   );

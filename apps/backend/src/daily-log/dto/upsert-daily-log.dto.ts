@@ -20,9 +20,9 @@ const PERIOD_FLOW_LEVEL_NUMBERS: PeriodFlowLevel[] = [
 ];
 
 export class UpsertDailyLogDto {
-  /** -10 = forte douleur / mal-être, +10 = très bon bien-être */
+  /** 0 = très mauvais, 5 = neutre, 10 = excellent */
   @IsInt()
-  @Min(-10)
+  @Min(0)
   @Max(10)
   sensation!: number;
 

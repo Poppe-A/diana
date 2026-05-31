@@ -9,24 +9,61 @@ import { SensationChart } from './components/SensationChart';
 import { PeriodDaysList } from './components/PeriodDaysList';
 import { useHistoryEvents } from './hooks/useHistoryEvents';
 import { rangeToDates, useHistoryLogs, type RangeKey } from './hooks/useHistoryLogs';
+import { useHistoryChartDisplay, HistoryChartDisplayProvider } from './hooks/useHistoryChartDisplay';
+import { useHistoryPains } from './hooks/useHistoryPains';
 import { resolveChartDays } from './utils/chartDaysForRange';
 import {
   CHART_HELP_ZOOM_MIN_POINTS,
   HistoryChartHelpButton,
 } from './components/HistoryChartHelpButton';
+import type { DailyLogView } from '../dailyLog/types';
+import type { PhysicalPainView } from '../physicalPain/types';
 
 export function HistoryPage() {
+  return (
+    <HistoryChartDisplayProvider>
+      <HistoryPageContent />
+    </HistoryChartDisplayProvider>
+  );
+}
+
+function HistoryPageContent() {
   const [range, setRange] = useState<RangeKey>('30d');
-  const { days, filledCount, initialLoading, isRefreshing, error, periodDates, average, reload } =
+  const { days, filledCount, initialLoading, isRefreshing, error, periodDates, average, patchDay } =
     useHistoryLogs(range);
   const { events } = useHistoryEvents(range);
+  const { showPainDetailsInTooltip } = useHistoryChartDisplay();
   const chartDataLoading = initialLoading || isRefreshing;
   const chartDays = useMemo(
     () => resolveChartDays(range, days, chartDataLoading),
     [range, days, chartDataLoading],
   );
+  const painsRangeFrom = chartDays[0]?.date;
+  const painsRangeTo = chartDays[chartDays.length - 1]?.date;
+  const { painsByDate, zoneLabelsByCode, patchPainsForDay } = useHistoryPains(
+    painsRangeFrom,
+    painsRangeTo,
+    showPainDetailsInTooltip && !chartDataLoading,
+  );
   const [editDate, setEditDate] = useState<string | null>(null);
   const [viewportStats, setViewportStats] = useState<HistoryViewportStats | null>(null);
+
+  const handleLogUpdated = useCallback(
+    (log: DailyLogView) => {
+      patchDay(log);
+    },
+    [patchDay],
+  );
+
+  const handlePainsUpdated = useCallback(
+    (pains: PhysicalPainView[]) => {
+      const painDate = pains[0]?.date ?? editDate;
+      if (painDate) {
+        patchPainsForDay(painDate, pains);
+      }
+    },
+    [editDate, patchPainsForDay],
+  );
 
   const handleViewportStatsChange = useCallback((stats: HistoryViewportStats | null) => {
     setViewportStats(stats);
@@ -73,6 +110,8 @@ export function HistoryPage() {
           range={range}
           events={events}
           dataLoading={chartDataLoading}
+          painsByDate={painsByDate}
+          zoneLabelsByCode={zoneLabelsByCode}
           onSelectDate={chartDataLoading ? undefined : setEditDate}
           onViewportStatsChange={chartDataLoading ? undefined : handleViewportStatsChange}
         />
@@ -88,7 +127,8 @@ export function HistoryPage() {
           initialLog={selectedDay?.log ?? null}
           onDateChange={setEditDate}
           onClose={() => setEditDate(null)}
-          onSaved={() => void reload()}
+          onLogUpdated={handleLogUpdated}
+          onPainsUpdated={handlePainsUpdated}
         />
       </Stack>
     </AppLayout>

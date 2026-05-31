@@ -11,6 +11,11 @@ export async function fetchPainsByDate(date: string): Promise<PhysicalPainView[]
   return data;
 }
 
+export async function fetchPainsRange(from: string, to: string): Promise<PhysicalPainView[]> {
+  const { data } = await api.get<PhysicalPainView[]>('/physical-pains', { params: { from, to } });
+  return data;
+}
+
 export async function savePainsForDate(date: string, pains: PainEntry[]): Promise<PhysicalPainView[]> {
   const { data } = await api.put<PhysicalPainView[]>(`/physical-pains/${date}`, { pains });
   return data;

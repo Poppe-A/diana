@@ -27,12 +27,12 @@ export function WizardPeriodStep({
   if (!visible) return null;
 
   return (
-    <Stack spacing={3} alignItems="stretch">
+    <Stack spacing={4} alignItems="stretch">
       <Typography variant="body1" textAlign="center">
         Règles aujourd’hui&nbsp;?
       </Typography>
 
-      <Stack direction="row" spacing={1.5}>
+      <Stack direction="row" spacing={2}>
         <Button
           variant={draft.isPeriodDay ? 'contained' : 'outlined'}
           size="large"

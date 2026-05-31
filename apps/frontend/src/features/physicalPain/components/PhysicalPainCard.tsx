@@ -1,6 +1,5 @@
 import {
   Alert,
-  Button,
   Card,
   CardContent,
   Chip,
@@ -19,10 +18,8 @@ import { PainEditorModal } from './PainEditorModal';
 
 type Props = {
   date: string;
-  /** Parcours guidé : Suivant / Passer au lieu du seul Enregistrer. */
-  wizardMode?: boolean;
-  onWizardNext?: () => void;
-  onWizardSkip?: () => void;
+  /** Liste renvoyée par le PUT après chaque enregistrement (modale). */
+  onPainsUpdated?: (pains: PhysicalPainView[]) => void;
 };
 
 function normalizeZones(input: BodyZone[]): BodyZone[] {
@@ -93,12 +90,7 @@ function painsToDraft(rows: PhysicalPainView[]): Record<string, PainEntry> {
   return entriesByZoneCode;
 }
 
-export function PhysicalPainCard({
-  date,
-  wizardMode = false,
-  onWizardNext,
-  onWizardSkip,
-}: Props) {
+export function PhysicalPainCard({ date, onPainsUpdated }: Props) {
   const [zones, setZones] = useState<BodyZone[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -114,7 +106,6 @@ export function PhysicalPainCard({
 
   const [view, setView] = useState<BodyZoneView>('front');
   const [activeZoneCode, setActiveZoneCode] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -171,44 +162,37 @@ export function PhysicalPainCard({
     setActiveZoneCode(zoneCode);
   };
 
-  const handleModalSave = (entry: PainEntry) => {
-    setDraftByZone((currentDraft) => ({ ...currentDraft, [entry.zoneCode]: entry }));
-    setSuccessToast(null);
-  };
-
-  const handleModalRemove = (zoneCode: string) => {
-    setDraftByZone((currentDraft) => {
-      const nextDraft = { ...currentDraft };
-      delete nextDraft[zoneCode];
-      return nextDraft;
-    });
-    setSuccessToast(null);
-  };
-
-  const handleSaveAll = async (): Promise<boolean> => {
-    setSaving(true);
+  const persistDraft = async (nextDraft: Record<string, PainEntry>): Promise<boolean> => {
     setError(null);
     try {
-      const pains = Object.values(draftByZone);
-      const saved = await savePainsForDate(date, pains);
+      const saved = await savePainsForDate(date, Object.values(nextDraft));
       setDraftByZone(painsToDraft(saved));
       setSuccessToast(`Enregistré à ${new Date().toLocaleTimeString('fr-FR')}.`);
+      onPainsUpdated?.(saved);
       return true;
     } catch {
       setError('Impossible d’enregistrer pour le moment. Réessaie plus tard.');
       return false;
-    } finally {
-      setSaving(false);
     }
   };
 
-  const handleWizardNext = async () => {
-    const hasPains = Object.keys(draftByZone).length > 0;
-    if (hasPains) {
-      const ok = await handleSaveAll();
-      if (!ok) return;
-    }
-    onWizardNext?.();
+  const handleModalSave = async (entry: PainEntry) => {
+    const previousDraft = draftByZone;
+    const nextDraft = { ...draftByZone, [entry.zoneCode]: entry };
+    setDraftByZone(nextDraft);
+    setSuccessToast(null);
+    const ok = await persistDraft(nextDraft);
+    if (!ok) setDraftByZone(previousDraft);
+  };
+
+  const handleModalRemove = async (zoneCode: string) => {
+    const previousDraft = draftByZone;
+    const nextDraft = { ...draftByZone };
+    delete nextDraft[zoneCode];
+    setDraftByZone(nextDraft);
+    setSuccessToast(null);
+    const ok = await persistDraft(nextDraft);
+    if (!ok) setDraftByZone(previousDraft);
   };
 
   return (
@@ -223,10 +207,7 @@ export function PhysicalPainCard({
           </Stack>
 
           {loading ? (
-            <Stack spacing={2}>
-              <Skeleton variant="rounded" height={740} />
-              <Skeleton variant="rounded" height={48} />
-            </Stack>
+            <Skeleton variant="rounded" height={740} />
           ) : (
             <>
               <Stack spacing={1} alignItems="center">
@@ -280,38 +261,6 @@ export function PhysicalPainCard({
                 onClose={() => setSuccessToast(null)}
               />
 
-              {wizardMode ? (
-                <Stack spacing={1}>
-                  <Button
-                    variant="contained"
-                    size="medium"
-                    onClick={() => void handleWizardNext()}
-                    disabled={saving}
-                    fullWidth
-                  >
-                    Suivant
-                  </Button>
-                  <Button
-                    variant="text"
-                    size="medium"
-                    onClick={() => onWizardSkip?.()}
-                    disabled={saving}
-                    fullWidth
-                  >
-                    Passer cette étape
-                  </Button>
-                </Stack>
-              ) : (
-                <Button
-                  variant="contained"
-                  size="medium"
-                  onClick={() => void handleSaveAll()}
-                  disabled={saving}
-                  fullWidth
-                >
-                  Enregistrer
-                </Button>
-              )}
             </>
           )}
         </Stack>

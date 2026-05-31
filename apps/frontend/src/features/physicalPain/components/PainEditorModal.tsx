@@ -17,8 +17,8 @@ type Props = {
   zone: BodyZone | null;
   initialEntry: PainEntry | null;
   onClose: () => void;
-  onSave: (entry: PainEntry) => void;
-  onRemove: (zoneCode: string) => void;
+  onSave: (entry: PainEntry) => void | Promise<void>;
+  onRemove: (zoneCode: string) => void | Promise<void>;
 };
 
 export function PainEditorModal({ open, zone, initialEntry, onClose, onSave, onRemove }: Props) {
@@ -37,6 +37,7 @@ export function PainEditorModal({ open, zone, initialEntry, onClose, onSave, onR
 
   const [intensity, setIntensity] = useState<number>(5);
   const [comment, setComment] = useState<string>('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -45,24 +46,34 @@ export function PainEditorModal({ open, zone, initialEntry, onClose, onSave, onR
     setComment(effectiveInitial.comment ?? '');
   }, [open, effectiveInitial]);
 
-  const handleSave = () => {
-    if (!zoneCode) return;
-    onSave({
-      zoneCode,
-      intensity,
-      comment: comment.trim().length ? comment.trim() : undefined,
-    });
-    onClose();
+  const handleSave = async () => {
+    if (!zoneCode || saving) return;
+    setSaving(true);
+    try {
+      await onSave({
+        zoneCode,
+        intensity,
+        comment: comment.trim().length ? comment.trim() : undefined,
+      });
+      onClose();
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleRemove = () => {
-    if (!zoneCode) return;
-    onRemove(zoneCode);
-    onClose();
+  const handleRemove = async () => {
+    if (!zoneCode || saving) return;
+    setSaving(true);
+    try {
+      await onRemove(zoneCode);
+      onClose();
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
+    <Dialog open={open} onClose={saving ? undefined : onClose} fullWidth maxWidth="sm">
       <DialogTitle>{zone?.label ?? 'Zone'}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
@@ -74,6 +85,7 @@ export function PainEditorModal({ open, zone, initialEntry, onClose, onSave, onR
               max={10}
               step={1}
               valueLabelDisplay="on"
+              disabled={saving}
               onChange={(_, v) => setIntensity(v as number)}
               aria-label="Intensité de la douleur"
             />
@@ -82,6 +94,7 @@ export function PainEditorModal({ open, zone, initialEntry, onClose, onSave, onR
           <TextField
             label="Commentaire (optionnel)"
             value={comment}
+            disabled={saving}
             onChange={(e) => setComment(e.target.value)}
             placeholder="Ex. douleur au biceps"
             multiline
@@ -90,17 +103,18 @@ export function PainEditorModal({ open, zone, initialEntry, onClose, onSave, onR
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={onClose}>Annuler</Button>
+        <Button onClick={onClose} disabled={saving}>
+          Annuler
+        </Button>
         {zoneCode && initialEntry ? (
-          <Button color="error" onClick={handleRemove}>
+          <Button color="error" onClick={() => void handleRemove()} disabled={saving}>
             Retirer
           </Button>
         ) : null}
-        <Button variant="contained" onClick={handleSave} disabled={!zoneCode}>
+        <Button variant="contained" onClick={() => void handleSave()} disabled={!zoneCode || saving}>
           Enregistrer
         </Button>
       </DialogActions>
     </Dialog>
   );
 }
-

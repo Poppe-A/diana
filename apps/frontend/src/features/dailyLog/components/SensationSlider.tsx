@@ -1,15 +1,16 @@
 import { Slider, Stack, Typography, useMediaQuery, useTheme } from '@mui/material';
 import { SENSATION_MAX, SENSATION_MIN } from '../types';
 
-const desktopMarks = [-10, -5, 0, 5, 10].map((value) => ({ value, label: `${value}` }));
-const mobileMarks = [-10, 0, 10].map((value) => ({ value, label: `${value}` }));
+const desktopMarks = [0, 2, 5, 8, 10].map((value) => ({ value, label: `${value}` }));
+const mobileMarks = [0, 5, 10].map((value) => ({ value, label: `${value}` }));
 
 type Props = {
   value: number;
   onChange: (value: number) => void;
+  onChangeCommitted?: (value: number) => void;
 };
 
-export function SensationSlider({ value, onChange }: Props) {
+export function SensationSlider({ value, onChange, onChangeCommitted }: Props) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
@@ -20,7 +21,7 @@ export function SensationSlider({ value, onChange }: Props) {
           Mal-être
         </Typography>
         <Typography variant="caption" color="text.secondary">
-          Neutre
+          Neutre (5)
         </Typography>
         <Typography variant="caption" color="success.main" sx={{ fontWeight: 600 }}>
           Bien-être
@@ -35,6 +36,11 @@ export function SensationSlider({ value, onChange }: Props) {
         value={value}
         size={isMobile ? 'medium' : 'medium'}
         onChange={(_, v) => onChange(v as number)}
+        onChangeCommitted={
+          onChangeCommitted
+            ? (_, v) => onChangeCommitted(v as number)
+            : undefined
+        }
         sx={{
           mt: 3,
           py: 1,

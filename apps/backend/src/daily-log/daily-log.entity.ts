@@ -26,7 +26,7 @@ export class DailyLog {
   @Column({ type: 'date' })
   date: string;
 
-  /** ciphertext AES-256-GCM (entier −10…+10 en clair côté appli) */
+  /** ciphertext AES-256-GCM (entier 0…10 en clair côté appli) */
   @Column({ type: 'text' })
   sensation: string;
 

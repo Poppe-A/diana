@@ -20,8 +20,12 @@ export async function fetchLogByDate(date: string): Promise<DailyLogView | null>
   return data;
 }
 
-export async function saveDailyLog(date: string, payload: SaveDailyLogPayload): Promise<void> {
-  await api.put(`/daily-logs/${date}`, payload);
+export async function saveDailyLog(
+  date: string,
+  payload: SaveDailyLogPayload,
+): Promise<DailyLogView> {
+  const { data } = await api.put<DailyLogView>(`/daily-logs/${date}`, payload);
+  return data;
 }
 
 export async function fetchLogsRange(from: string, to: string): Promise<DailyLogHistoryDay[]> {

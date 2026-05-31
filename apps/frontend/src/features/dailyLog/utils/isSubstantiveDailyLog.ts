@@ -4,7 +4,7 @@ import type { DailyLogView } from '../types';
 export function isSubstantiveDailyLog(log: DailyLogView | null): boolean {
   if (!log) return false;
   return (
-    log.sensation !== 0 ||
+    log.sensation !== 5 ||
     log.anxietyLevel !== 0 ||
     log.sleepQuality !== 0 ||
     log.isPeriodDay ||

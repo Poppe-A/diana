@@ -11,6 +11,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { saveDailyLog } from '../api';
 import {
+  draftFromLog,
   draftToSavePayload,
   draftToWizardSavePayload,
   type DailyLogDraft,
@@ -64,7 +65,7 @@ export function DailyLogWizard({ date, onComplete, showPeriodStep = true }: Prop
   const [stepIndex, setStepIndex] = useState(0);
   const [maxSavedStepIndex, setMaxSavedStepIndex] = useState(-1);
   const [draft, setDraft] = useState<DailyLogDraft>({
-    sensation: 0,
+    sensation: 5,
     anxietyLevel: 0,
     sleepQuality: 0,
     comment: '',
@@ -97,13 +98,13 @@ export function DailyLogWizard({ date, onComplete, showPeriodStep = true }: Prop
     setSaving(true);
     setError(null);
     try {
-      await saveDailyLog(
+      const saved = await saveDailyLog(
         date,
         useFullPayload
           ? draftToSavePayload(nextDraft)
           : draftToWizardSavePayload(completedStep, nextDraft),
       );
-      setDraft(nextDraft);
+      setDraft(draftFromLog(saved));
       setMaxSavedStepIndex((prev) => Math.max(prev, completedIndex));
       return true;
     } catch {
@@ -127,15 +128,6 @@ export function DailyLogWizard({ date, onComplete, showPeriodStep = true }: Prop
   const goNext = async () => {
     if (!isWizardSaveStep(step)) return;
     const ok = await persistStep(step, draft);
-    if (!ok) return;
-    goToStep(stepIndex + 1);
-  };
-
-  const skipPeriodStep = async () => {
-    const nextDraft = { ...draft, isPeriodDay: false, periodFlow: '' as const };
-    setDraft(nextDraft);
-    setPeriodAnswered(false);
-    const ok = await persistStep('period', nextDraft);
     if (!ok) return;
     goToStep(stepIndex + 1);
   };
@@ -186,17 +178,13 @@ export function DailyLogWizard({ date, onComplete, showPeriodStep = true }: Prop
     return (
       <Stack spacing={2}>
         {renderStepHeader()}
-        <PhysicalPainCard
-          date={date}
-          wizardMode
-          onWizardNext={() => goToStep(stepIndex + 1)}
-          onWizardSkip={() => goToStep(stepIndex + 1)}
-        />
-        {canGoPrevious ? (
-          <Button variant="outlined" size="large" fullWidth onClick={goPrevious}>
-            Précédent
-          </Button>
-        ) : null}
+        <PhysicalPainCard date={date} />
+        <Stack spacing={2} sx={{ mt: 2 }}>
+          {renderNavButtons(
+            hasCompletedLaterSteps ? 'Étape suivante' : 'Suivant',
+            () => goToStep(stepIndex + 1),
+          )}
+        </Stack>
       </Stack>
     );
   }
@@ -240,20 +228,13 @@ export function DailyLogWizard({ date, onComplete, showPeriodStep = true }: Prop
               }}
             />
             {error && <Alert severity="error">{error}</Alert>}
-            {renderNavButtons(
-              hasCompletedLaterSteps ? 'Étape suivante' : 'Suivant',
-              goNext,
-              !periodAnswered,
-            )}
-            <Button
-              variant="text"
-              size="large"
-              disabled={saving}
-              onClick={() => void skipPeriodStep()}
-              fullWidth
-            >
-              Passer cette étape
-            </Button>
+            <Stack spacing={2} sx={{ mt: 2 }}>
+              {renderNavButtons(
+                hasCompletedLaterSteps ? 'Étape suivante' : 'Suivant',
+                goNext,
+                !periodAnswered,
+              )}
+            </Stack>
           </Stack>
         </CardContent>
       </Card>
@@ -270,8 +251,7 @@ export function DailyLogWizard({ date, onComplete, showPeriodStep = true }: Prop
             {step === 'sensation' && (
               <Stack spacing={2}>
                 <Typography variant="body2" color="text.secondary">
-                  Échelle de {SENSATION_MIN} (douleur / mal-être) à {SENSATION_MAX} (bien-être). 0
-                  = neutre.
+                  Échelle de {SENSATION_MIN} (mal-être) à {SENSATION_MAX} (bien-être). 5 = neutre.
                 </Typography>
                 <SensationSlider
                   value={draft.sensation}
